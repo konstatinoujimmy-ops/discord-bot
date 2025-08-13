@@ -22,6 +22,9 @@ Preferred communication style: Simple, everyday language.
 - Advanced security: Auto-removal of ban permissions from non-owners
 - Added /ban command (owner-only) and /protect_roles for security monitoring
 - Real-time role permission monitoring with owner notifications
+- CONFIRMED: 24/7 system working perfectly with UptimeRobot monitoring
+- Bot auto-restarts every ~20min (normal Replit behavior) and UptimeRobot immediately re-activates it
+- Ultra premium audio quality implemented with dynamic audio normalization
 
 # System Architecture
 
