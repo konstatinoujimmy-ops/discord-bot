@@ -88,7 +88,12 @@ class YTDLSource(discord.PCMVolumeTransformer):
 @bot.event
 async def on_ready():
     """Event triggered when bot is ready"""
-    await tree.sync()
+    try:
+        synced = await tree.sync()
+        logger.info(f"✅ Synced {len(synced)} slash commands")
+    except Exception as e:
+        logger.error(f"❌ Failed to sync commands: {e}")
+    
     logger.info(f"✅ Bot online ως {bot.user}")
     logger.info(f'Bot ID: {bot.user.id if bot.user else "Unknown"}')
     logger.info(f'Guilds: {len(bot.guilds)}')
@@ -100,6 +105,23 @@ async def on_ready():
             name="24/7 στο Replit!"
         )
     )
+
+@bot.event
+async def on_command_error(ctx, error):
+    """Handle command errors"""
+    logger.error(f"Command error: {error}")
+    if isinstance(error, commands.CommandNotFound):
+        return
+    await ctx.send(f"❌ Σφάλμα: {error}")
+
+@bot.event
+async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+    """Handle slash command errors"""
+    logger.error(f"Slash command error: {error}")
+    if interaction.response.is_done():
+        await interaction.followup.send(f"❌ Σφάλμα: {error}", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"❌ Σφάλμα: {error}", ephemeral=True)
 
 def is_staff_or_owner(member: discord.Member) -> bool:
     """Έλεγχος αν ο χρήστης είναι staff ή owner"""
