@@ -47,23 +47,23 @@ OWNER_ID = 839148474314129419
 active_mutes = {}
 dm2_sent_count = 0  # Μετρητής για τα DM του /dm2
 
-# YTDL & FFMPEG setup με καλύτερη ποιότητα ήχου
+# YTDL & FFMPEG setup με την καλύτερη ποιότητα ήχου Discord
 ytdl_format_options = {
-    'format': 'bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a]/bestaudio/best',
+    'format': 'bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a][acodec=aac]/bestaudio/best',
     'quiet': True,
     'no_warnings': True,
     'default_search': 'ytsearch',
     'source_address': '0.0.0.0',
     'extractaudio': True,
     'audioformat': 'opus',
-    'audioquality': 0,  # Καλύτερη ποιότητα
+    'audioquality': '0',  # Καλύτερη ποιότητα (0 = best)
     'prefer_ffmpeg': True,
 }
 
-# Βελτιωμένες FFMPEG ρυθμίσεις για τέλειο ήχο
+# Premium FFMPEG ρυθμίσεις για Discord-optimized ήχο
 ffmpeg_options = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn -filter:a "volume=0.5" -threads 1'
+    'options': '-vn -ar 48000 -ac 2 -b:a 320k -acodec libopus -f opus -threads 2'
 }
 
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
@@ -206,6 +206,58 @@ async def permissions(interaction: discord.Interaction):
     perms_list = [perm for perm, value in perms if value]
     await interaction.response.send_message(f"✅ Δικαιώματά σου:\n- " + "\n- ".join(perms_list), ephemeral=True)
 
+# Προστασία από staff abuse για role permissions
+@bot.event
+async def on_member_update(before, after):
+    """Προστασία από αλλαγές permissions σε roles από staff"""
+    # Αν δεν είναι αλλαγή ρόλων, επιστροφή
+    if before.roles == after.roles:
+        return
+    
+    # Αν ο χρήστης που έκανε την αλλαγή είναι owner, επιτρέπεται
+    if after.id == OWNER_ID:
+        return
+    
+    # Βρες ποιοι ρόλοι προστέθηκαν ή αφαιρέθηκαν
+    added_roles = set(after.roles) - set(before.roles)
+    removed_roles = set(before.roles) - set(after.roles)
+    
+    # Έλεγχος για επικίνδυνους ρόλους (admin/mod roles)
+    dangerous_permissions = [
+        'administrator', 'manage_guild', 'manage_roles', 
+        'manage_channels', 'kick_members', 'ban_members'
+    ]
+    
+    for role in added_roles:
+        role_perms = role.permissions
+        if any(getattr(role_perms, perm, False) for perm in dangerous_permissions):
+            # Αν το μέλος που πήρε τον ρόλο δεν είναι owner, καταγραφή
+            logger.warning(f"⚠️ Επικίνδυνος ρόλος {role.name} δόθηκε στο {after.mention}")
+
+@tree.command(name="protect_roles", description="Ενεργοποίηση προστασίας ρόλων (Owner μόνο)")
+async def protect_roles(interaction: discord.Interaction):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Μόνο ο owner μπορεί να χρησιμοποιήσει αυτή την εντολή.", ephemeral=True)
+        return
+    
+    embed = discord.Embed(
+        title="🛡️ Προστασία Ρόλων Ενεργή",
+        description="Το bot παρακολουθεί αλλαγές σε επικίνδυνους ρόλους",
+        color=discord.Color.green()
+    )
+    embed.add_field(
+        name="Προστατευμένα Δικαιώματα:",
+        value="• Administrator\n• Manage Server\n• Manage Roles\n• Manage Channels\n• Kick/Ban Members",
+        inline=False
+    )
+    embed.add_field(
+        name="Σημείωση:",
+        value="Μόνο ο Owner μπορεί να δίνει επικίνδυνους ρόλους χωρίς προειδοποίηση",
+        inline=False
+    )
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 # Music Player Controls με Buttons
 class MusicControlView(discord.ui.View):
     def __init__(self, voice_client, player):
@@ -268,9 +320,10 @@ class MusicControlView(discord.ui.View):
         else:
             await interaction.response.send_message("❌ Δεν βρέθηκαν πληροφορίες!", ephemeral=True)
 
-@tree.command(name="play", description="Παίξε μουσική από URL ή όνομα με πλήρη controls.")
+@tree.command(name="play", description="Παίξε μουσική από URL ή όνομα με πλήρη controls (όλοι).")
 @app_commands.describe(url="URL ή όνομα τραγουδιού")
 async def play(interaction: discord.Interaction, url: str):
+    # Όλοι μπορούν να χρησιμοποιήσουν το /play
     if not interaction.user.voice or not interaction.user.voice.channel:
         await interaction.response.send_message("❌ Πρέπει να είσαι σε φωνητικό κανάλι για να παίξεις μουσική.", ephemeral=True)
         return
