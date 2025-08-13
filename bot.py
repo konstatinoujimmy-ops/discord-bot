@@ -63,7 +63,7 @@ ytdl_format_options = {
 # Ultra Premium FFMPEG ρυθμίσεις για τον καλύτερο Discord ήχο
 ffmpeg_options = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
-    'options': '-vn -ar 48000 -ac 2 -ab 512k -acodec libopus -compression_level 10 -frame_duration 20 -application audio -cutoff 20000 -f opus -threads 4'
+    'options': '-vn -ar 48000 -ac 2 -b:a 320k -f opus'
 }
 
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
