@@ -9,6 +9,7 @@ import time
 import logging
 from keep_alive import keep_alive
 from bot import run_bot
+from auto_ping import start_auto_ping
 
 # Configure logging
 logging.basicConfig(
@@ -32,6 +33,10 @@ def main():
         
         # Small delay to ensure Flask server starts
         time.sleep(2)
+        
+        # Start auto-ping system για 24/7 uptime
+        logger.info("Starting auto-ping system...")
+        start_auto_ping()
         
         # Start the Discord bot
         logger.info("Starting Discord bot...")
