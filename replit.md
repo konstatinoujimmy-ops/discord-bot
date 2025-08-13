@@ -17,6 +17,11 @@ Preferred communication style: Simple, everyday language.
 - Improved audio quality with Opus codec and optimized FFMPEG settings
 - Fixed UptimeRobot integration with correct Replit dev domain URL
 - User confirmed UptimeRobot setup complete for 24/7 operation
+- Opened /play command to all users (not just staff)
+- Ultra premium audio quality (512k bitrate, 48kHz, Discord-optimized Opus)
+- Advanced security: Auto-removal of ban permissions from non-owners
+- Added /ban command (owner-only) and /protect_roles for security monitoring
+- Real-time role permission monitoring with owner notifications
 
 # System Architecture
 

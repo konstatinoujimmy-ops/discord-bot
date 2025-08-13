@@ -60,10 +60,10 @@ ytdl_format_options = {
     'prefer_ffmpeg': True,
 }
 
-# Premium FFMPEG ρυθμίσεις για Discord-optimized ήχο
+# Ultra Premium FFMPEG ρυθμίσεις για τον καλύτερο Discord ήχο
 ffmpeg_options = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn -ar 48000 -ac 2 -b:a 320k -acodec libopus -f opus -threads 2'
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
+    'options': '-vn -ar 48000 -ac 2 -ab 512k -acodec libopus -compression_level 10 -frame_duration 20 -application audio -cutoff 20000 -f opus -threads 4'
 }
 
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
@@ -209,7 +209,7 @@ async def permissions(interaction: discord.Interaction):
 # Προστασία από staff abuse για role permissions
 @bot.event
 async def on_member_update(before, after):
-    """Προστασία από αλλαγές permissions σε roles από staff"""
+    """Προστασία από αλλαγές permissions σε roles από staff - ΕΙΔΙΚΑ BAN PERMISSIONS"""
     # Αν δεν είναι αλλαγή ρόλων, επιστροφή
     if before.roles == after.roles:
         return
@@ -218,20 +218,35 @@ async def on_member_update(before, after):
     if after.id == OWNER_ID:
         return
     
-    # Βρες ποιοι ρόλοι προστέθηκαν ή αφαιρέθηκαν
+    # Βρες ποιοι ρόλοι προστέθηκαν
     added_roles = set(after.roles) - set(before.roles)
-    removed_roles = set(before.roles) - set(after.roles)
     
-    # Έλεγχος για επικίνδυνους ρόλους (admin/mod roles)
-    dangerous_permissions = [
-        'administrator', 'manage_guild', 'manage_roles', 
-        'manage_channels', 'kick_members', 'ban_members'
-    ]
-    
+    # Έλεγχος για BAN PERMISSIONS - ΑΠΑΓΟΡΕΥΜΕΝΟ για όλους εκτός owner
     for role in added_roles:
         role_perms = role.permissions
-        if any(getattr(role_perms, perm, False) for perm in dangerous_permissions):
-            # Αν το μέλος που πήρε τον ρόλο δεν είναι owner, καταγραφή
+        if role_perms.ban_members or role_perms.administrator:
+            # ΑΦΑΙΡΕΣΗ του ρόλου αμέσως αν έχει ban permissions
+            try:
+                await after.remove_roles(role, reason="Απαγορευμένα ban permissions - μόνο owner")
+                logger.warning(f"🚫 BLOCKED: Αφαίρεσα ρόλο {role.name} από {after.mention} - ban permissions!")
+                
+                # Ειδοποίηση σε DM στον owner
+                owner = bot.get_user(OWNER_ID)
+                if owner:
+                    embed = discord.Embed(
+                        title="🚫 SECURITY ALERT: Ban Permission Blocked",
+                        description=f"Αφαίρεσα ρόλο **{role.name}** από {after.mention}",
+                        color=discord.Color.red()
+                    )
+                    embed.add_field(name="Λόγος", value="Ρόλος με ban permissions - μόνο εσύ μπορείς να τον δώσεις", inline=False)
+                    embed.add_field(name="Χρόνος", value=f"<t:{int(datetime.utcnow().timestamp())}:F>", inline=False)
+                    await owner.send(embed=embed)
+                    
+            except discord.Forbidden:
+                logger.error(f"❌ Δεν μπόρεσα να αφαιρέσω ρόλο {role.name} από {after.mention}")
+        
+        # Καταγραφή άλλων επικίνδυνων permissions
+        elif any(getattr(role_perms, perm, False) for perm in ['manage_guild', 'manage_roles', 'manage_channels', 'kick_members']):
             logger.warning(f"⚠️ Επικίνδυνος ρόλος {role.name} δόθηκε στο {after.mention}")
 
 @tree.command(name="protect_roles", description="Ενεργοποίηση προστασίας ρόλων (Owner μόνο)")
@@ -242,21 +257,47 @@ async def protect_roles(interaction: discord.Interaction):
     
     embed = discord.Embed(
         title="🛡️ Προστασία Ρόλων Ενεργή",
-        description="Το bot παρακολουθεί αλλαγές σε επικίνδυνους ρόλους",
-        color=discord.Color.green()
+        description="Το bot **ΑΥΤΟΜΑΤΑ ΑΦΑΙΡΕΙ** ban permissions από όλους εκτός owner",
+        color=discord.Color.red()
     )
     embed.add_field(
-        name="Προστατευμένα Δικαιώματα:",
-        value="• Administrator\n• Manage Server\n• Manage Roles\n• Manage Channels\n• Kick/Ban Members",
+        name="🚫 ΑΥΤΟΜΑΤΗ ΑΦΑΙΡΕΣΗ:",
+        value="• Ban Members (ΑΠΑΓΟΡΕΥΜΕΝΟ)\n• Administrator (ΑΠΑΓΟΡΕΥΜΕΝΟ)",
         inline=False
     )
     embed.add_field(
-        name="Σημείωση:",
-        value="Μόνο ο Owner μπορεί να δίνει επικίνδυνους ρόλους χωρίς προειδοποίηση",
+        name="⚠️ Παρακολούθηση:",
+        value="• Manage Server\n• Manage Roles\n• Manage Channels\n• Kick Members",
+        inline=False
+    )
+    embed.add_field(
+        name="✅ Ασφάλεια:",
+        value="Μόνο ο Owner μπορεί να έχει ban permissions",
         inline=False
     )
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# Επιπλέον προστασία για ban command
+@tree.command(name="ban", description="Ban χρήστη (ΜΟΝΟ OWNER)")
+@app_commands.describe(user="Χρήστης για ban", reason="Λόγος ban")
+async def ban_user(interaction: discord.Interaction, user: discord.Member, reason: str = "Δεν δόθηκε λόγος"):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("🚫 **ΑΠΑΓΟΡΕΥΜΕΝΟ**: Μόνο ο owner μπορεί να κάνει ban!", ephemeral=True)
+        return
+    
+    try:
+        await user.ban(reason=f"Ban από owner: {reason}")
+        embed = discord.Embed(
+            title="🔨 User Banned",
+            description=f"**{user}** banned επιτυχώς",
+            color=discord.Color.red()
+        )
+        embed.add_field(name="Λόγος", value=reason, inline=False)
+        embed.add_field(name="Από", value=interaction.user.mention, inline=True)
+        await interaction.response.send_message(embed=embed)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Σφάλμα ban: {e}", ephemeral=True)
 
 # Music Player Controls με Buttons
 class MusicControlView(discord.ui.View):
