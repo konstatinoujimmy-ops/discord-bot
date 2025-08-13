@@ -99,9 +99,15 @@ STATUS_TEMPLATE = """
 @app.route('/')
 def index():
     """Main status page"""
-    ping_url = os.getenv('REPL_SLUG', 'your-repl-name') + '.' + os.getenv('REPL_OWNER', 'your-username') + '.repl.co'
-    if not ping_url.startswith('http'):
-        ping_url = f"https://{ping_url}"
+    # Χρησιμοποιούμε το σωστό Replit dev domain
+    dev_domain = os.getenv('REPLIT_DEV_DOMAIN', '')
+    if dev_domain:
+        ping_url = f"https://{dev_domain}"
+    else:
+        # Fallback στο παλιό format
+        ping_url = os.getenv('REPL_SLUG', 'workspace') + '.' + os.getenv('REPL_OWNER', 'konstantinoudem') + '.repl.co'
+        if not ping_url.startswith('http'):
+            ping_url = f"https://{ping_url}"
     
     return render_template_string(STATUS_TEMPLATE, 
                                 timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC'),
