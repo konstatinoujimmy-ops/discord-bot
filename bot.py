@@ -308,8 +308,9 @@ async def check_rate_limit(user_id: int, action_type: str, limit: int, window_mi
 @tree.command(name="security_status", description="Εμφανίζει την κατάσταση ασφαλείας του server")
 async def security_status(interaction: discord.Interaction):
     """Εμφανίζει αναλυτικά stats ασφαλείας"""
-    if interaction.user.id != OWNER_ID:
-        await interaction.response.send_message("❌ Μόνο ο owner μπορεί να δει τα security stats!", ephemeral=True)
+    # Έλεγχος αν είναι owner ή staff
+    if not is_staff_or_owner(interaction.user):
+        await interaction.response.send_message("❌ Μόνο ο owner και το staff μπορούν να δουν τα security stats!", ephemeral=True)
         return
     
     embed = discord.Embed(

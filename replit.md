@@ -25,6 +25,9 @@ Preferred communication style: Simple, everyday language.
 - CONFIRMED: 24/7 system working perfectly with UptimeRobot monitoring
 - Bot auto-restarts every ~20min (normal Replit behavior) and UptimeRobot immediately re-activates it
 - Ultra premium audio quality implemented with dynamic audio normalization
+- ULTIMATE SECURITY SYSTEM: Auto-monitors channels, @everyone mentions, bans, kicks, timeouts
+- Auto-ping system ensures 24/7 uptime without external services
+- /security_status command accessible to owner and staff roles
 
 # System Architecture
 
