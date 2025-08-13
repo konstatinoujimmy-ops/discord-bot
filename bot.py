@@ -4,13 +4,14 @@ Discord Bot Implementation με 24/7 Keep-Alive
 """
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 import asyncio
 import os
 import yt_dlp
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+from collections import defaultdict
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -46,6 +47,16 @@ OWNER_ID = 839148474314129419
 
 active_mutes = {}
 dm2_sent_count = 0  # Μετρητής για τα DM του /dm2
+
+# Security monitoring system
+security_tracker = {
+    'channel_creations': defaultdict(list),
+    'everyone_mentions': defaultdict(list),
+    'bans': defaultdict(list),
+    'kicks': defaultdict(list),
+    'timeouts': defaultdict(list),
+    'role_removals': {}  # user_id: removal_time
+}
 
 # ULTRA PREMIUM AUDIO - Η απόλυτη καλύτερη ποιότητα για Discord
 ytdl_format_options = {
@@ -105,9 +116,12 @@ async def on_ready():
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching, 
-            name="24/7 στο Replit!"
+            name="🛡️ Security Monitor 24/7"
         )
     )
+    
+    # Start security cleanup task
+    cleanup_security_logs.start()
 
 @bot.event
 async def on_command_error(ctx, error):
@@ -126,9 +140,210 @@ async def on_app_command_error(interaction: discord.Interaction, error: discord.
     else:
         await interaction.response.send_message(f"❌ Σφάλμα: {error}", ephemeral=True)
 
+# SECURITY EVENT HANDLERS
+
+@bot.event
+async def on_guild_channel_create(channel):
+    """Παρακολουθεί τη δημιουργία νέων channels"""
+    if hasattr(channel, 'guild') and channel.guild:
+        async for entry in channel.guild.audit_logs(action=discord.AuditLogAction.channel_create, limit=1):
+            if entry.user and entry.user.id != OWNER_ID:
+                # Έλεγχος rate limit για δημιουργία channels (3+ σε 10 λεπτά)
+                if await check_rate_limit(entry.user.id, 'channel_creations', 2, 10):
+                    member = channel.guild.get_member(entry.user.id)
+                    if member:
+                        await remove_all_roles_except_everyone(
+                            member, 
+                            f"Rapid channel creation (3+ channels in 10 minutes)"
+                        )
+            break
+
+@bot.event
+async def on_message(message):
+    """Παρακολουθεί μηνύματα για @everyone/@here mentions"""
+    if message.author.id == OWNER_ID or message.author.bot:
+        return
+    
+    # Έλεγχος για @everyone ή @here mentions
+    if message.mention_everyone or '@everyone' in message.content or '@here' in message.content:
+        # Έλεγχος rate limit (2+ mentions)
+        if await check_rate_limit(message.author.id, 'everyone_mentions', 1, 60):
+            await remove_all_roles_except_everyone(
+                message.author,
+                f"Multiple @everyone/@here mentions (10 hour penalty)"
+            )
+    
+    await bot.process_commands(message)
+
+@bot.event
+async def on_member_ban(guild, user):
+    """Παρακολουθεί bans"""
+    async for entry in guild.audit_logs(action=discord.AuditLogAction.ban, limit=1):
+        if entry.user and entry.user.id != OWNER_ID:
+            # Έλεγχος rate limit για bans (5+ bans)
+            if await check_rate_limit(entry.user.id, 'bans', 4, 60):
+                member = guild.get_member(entry.user.id)
+                if member:
+                    await remove_all_roles_except_everyone(
+                        member,
+                        f"Excessive banning (5+ bans in 1 hour)"
+                    )
+        break
+
+@bot.event
+async def on_member_remove(member):
+    """Παρακολουθεί kicks"""
+    if member.guild:
+        async for entry in member.guild.audit_logs(action=discord.AuditLogAction.kick, limit=1):
+            if entry.user and entry.user.id != OWNER_ID and entry.target.id == member.id:
+                # Έλεγχος rate limit για kicks (11+ kicks)
+                if await check_rate_limit(entry.user.id, 'kicks', 10, 60):
+                    perpetrator = member.guild.get_member(entry.user.id)
+                    if perpetrator:
+                        await remove_all_roles_except_everyone(
+                            perpetrator,
+                            f"Excessive kicking (11+ kicks in 1 hour)"
+                        )
+            break
+
+@bot.event
+async def on_member_update(before, after):
+    """Παρακολουθεί timeouts"""
+    # Έλεγχος αν ο χρήστης έλαβε timeout
+    if before.timed_out_until is None and after.timed_out_until is not None:
+        async for entry in after.guild.audit_logs(action=discord.AuditLogAction.member_update, limit=1):
+            if (entry.user and entry.user.id != OWNER_ID and 
+                entry.target.id == after.id and 
+                hasattr(entry.changes, 'timed_out_until')):
+                
+                # Έλεγχος rate limit για timeouts (11+ timeouts)
+                if await check_rate_limit(entry.user.id, 'timeouts', 10, 60):
+                    perpetrator = after.guild.get_member(entry.user.id)
+                    if perpetrator:
+                        await remove_all_roles_except_everyone(
+                            perpetrator,
+                            f"Excessive timeouts (11+ timeouts in 1 hour)"
+                        )
+            break
+
 def is_staff_or_owner(member: discord.Member) -> bool:
     """Έλεγχος αν ο χρήστης είναι staff ή owner"""
     return member.id == OWNER_ID or any(role.id in STAFF_ROLE_IDS for role in member.roles)
+
+async def remove_all_roles_except_everyone(member: discord.Member, reason: str):
+    """Αφαιρεί όλα τα roles από έναν χρήστη εκτός του @everyone"""
+    try:
+        # Αφαιρούμε όλα τα roles εκτός του @everyone
+        roles_to_remove = [role for role in member.roles if role.name != "@everyone"]
+        if roles_to_remove:
+            await member.remove_roles(*roles_to_remove, reason=f"🛡️ Security violation: {reason}")
+            
+            # Αποθηκεύουμε την ώρα αφαίρεσης για τα @everyone/@here mentions (10 ώρες)
+            if "everyone/here mentions" in reason:
+                security_tracker['role_removals'][member.id] = datetime.now() + timedelta(hours=10)
+            
+            # Ειδοποίηση στον owner
+            owner = bot.get_user(OWNER_ID)
+            if owner:
+                embed = discord.Embed(
+                    title="🚨 SECURITY ALERT",
+                    description=f"**User:** {member.mention} ({member.id})\n**Reason:** {reason}\n**Action:** All roles removed",
+                    color=discord.Color.red(),
+                    timestamp=datetime.now()
+                )
+                try:
+                    await owner.send(embed=embed)
+                except:
+                    pass
+            
+            logger.warning(f"🛡️ SECURITY: Removed all roles from {member} - {reason}")
+            return True
+    except Exception as e:
+        logger.error(f"Failed to remove roles from {member}: {e}")
+        return False
+
+@tasks.loop(hours=1)
+async def cleanup_security_logs():
+    """Καθαρίζει τα παλιά logs ασφαλείας κάθε ώρα"""
+    now = datetime.now()
+    cutoff_time = now - timedelta(hours=24)  # Κρατάμε logs για 24 ώρες
+    
+    # Καθαρισμός παλιών entries
+    for action_type in ['channel_creations', 'everyone_mentions', 'bans', 'kicks', 'timeouts']:
+        for user_id in list(security_tracker[action_type].keys()):
+            security_tracker[action_type][user_id] = [
+                timestamp for timestamp in security_tracker[action_type][user_id] 
+                if timestamp > cutoff_time
+            ]
+            if not security_tracker[action_type][user_id]:
+                del security_tracker[action_type][user_id]
+    
+    # Καθαρισμός expired role removals
+    expired_users = [
+        user_id for user_id, expiry_time in security_tracker['role_removals'].items()
+        if now > expiry_time
+    ]
+    for user_id in expired_users:
+        del security_tracker['role_removals'][user_id]
+
+async def check_rate_limit(user_id: int, action_type: str, limit: int, window_minutes: int = 60) -> bool:
+    """Ελέγχει αν ο χρήστης έχει υπερβεί το όριο για μια ενέργεια"""
+    now = datetime.now()
+    cutoff_time = now - timedelta(minutes=window_minutes)
+    
+    # Καθαρισμός παλιών entries
+    security_tracker[action_type][user_id] = [
+        timestamp for timestamp in security_tracker[action_type][user_id] 
+        if timestamp > cutoff_time
+    ]
+    
+    # Προσθήκη του τρέχοντος timestamp
+    security_tracker[action_type][user_id].append(now)
+    
+    # Έλεγχος αν υπερβαίνει το όριο
+    return len(security_tracker[action_type][user_id]) > limit
+
+# SECURITY COMMANDS
+
+@tree.command(name="security_status", description="Εμφανίζει την κατάσταση ασφαλείας του server")
+async def security_status(interaction: discord.Interaction):
+    """Εμφανίζει αναλυτικά stats ασφαλείας"""
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Μόνο ο owner μπορεί να δει τα security stats!", ephemeral=True)
+        return
+    
+    embed = discord.Embed(
+        title="🛡️ Security Monitor Status", 
+        color=discord.Color.blue(),
+        timestamp=datetime.now()
+    )
+    
+    # Στατιστικά για κάθε τύπο violation
+    for action_type, display_name in [
+        ('channel_creations', 'Channel Creations'),
+        ('everyone_mentions', '@everyone/@here Mentions'),
+        ('bans', 'Bans'),
+        ('kicks', 'Kicks'),
+        ('timeouts', 'Timeouts')
+    ]:
+        active_users = len(security_tracker[action_type])
+        total_actions = sum(len(actions) for actions in security_tracker[action_type].values())
+        embed.add_field(
+            name=f"📊 {display_name}",
+            value=f"Active users: {active_users}\nTotal actions: {total_actions}",
+            inline=True
+        )
+    
+    # Role removals που είναι σε ισχύ
+    active_removals = len(security_tracker['role_removals'])
+    embed.add_field(
+        name="🚫 Active Role Removals",
+        value=f"{active_removals} users currently without roles",
+        inline=True
+    )
+    
+    embed.set_footer(text="Monitoring 24/7 | Auto-cleanup every hour")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # Slash Commands από τον αρχικό κώδικα
 
