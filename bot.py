@@ -346,6 +346,190 @@ async def security_status(interaction: discord.Interaction):
     embed.set_footer(text="Monitoring 24/7 | Auto-cleanup every hour")
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
+@tree.command(name="security_report", description="Generates a comprehensive security report")
+async def security_report(interaction: discord.Interaction):
+    """Generates a detailed security report with all violations and statistics"""
+    if not is_staff_or_owner(interaction.user):
+        await interaction.response.send_message("❌ Only owner and staff can generate security reports!", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    # Generate comprehensive report
+    report_content = generate_security_report(interaction.guild)
+    
+    # Create a text file with the report
+    report_file = discord.File(
+        fp=io.StringIO(report_content),
+        filename=f"security_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    )
+    
+    # Create summary embed
+    summary_embed = discord.Embed(
+        title="🛡️ Security Report Generated",
+        description="Complete security analysis attached as file",
+        color=discord.Color.green(),
+        timestamp=datetime.now()
+    )
+    
+    summary_embed.add_field(
+        name="📊 Report Contents",
+        value="• Violation statistics\n• User activity logs\n• Security timeline\n• Risk assessment\n• Recommendations",
+        inline=False
+    )
+    
+    await interaction.followup.send(
+        embed=summary_embed,
+        file=report_file,
+        ephemeral=True
+    )
+
+def generate_security_report(guild) -> str:
+    """Generates comprehensive security report content"""
+    now = datetime.now()
+    report = []
+    
+    # Header
+    report.append("=" * 80)
+    report.append(f"SECURITY REPORT - {guild.name}")
+    report.append(f"Generated: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    report.append("=" * 80)
+    report.append("")
+    
+    # Executive Summary
+    report.append("EXECUTIVE SUMMARY")
+    report.append("-" * 40)
+    total_violations = 0
+    active_penalties = len(security_tracker['role_removals'])
+    
+    for action_type in ['channel_creations', 'everyone_mentions', 'bans', 'kicks', 'timeouts']:
+        total_violations += sum(len(actions) for actions in security_tracker[action_type].values())
+    
+    report.append(f"Total Security Violations (24h): {total_violations}")
+    report.append(f"Users Currently Penalized: {active_penalties}")
+    report.append(f"Security Status: {'HIGH RISK' if total_violations > 50 else 'MODERATE RISK' if total_violations > 20 else 'LOW RISK'}")
+    report.append("")
+    
+    # Detailed Statistics
+    report.append("DETAILED VIOLATION STATISTICS")
+    report.append("-" * 40)
+    
+    violations_details = [
+        ('channel_creations', 'Rapid Channel Creation', '3+ channels in 10 minutes'),
+        ('everyone_mentions', '@everyone/@here Abuse', '2+ mentions in 1 hour (10h penalty)'),
+        ('bans', 'Excessive Banning', '5+ bans in 1 hour'),
+        ('kicks', 'Excessive Kicking', '11+ kicks in 1 hour'),
+        ('timeouts', 'Excessive Timeouts', '11+ timeouts in 1 hour')
+    ]
+    
+    for action_type, display_name, threshold in violations_details:
+        users_count = len(security_tracker[action_type])
+        total_actions = sum(len(actions) for actions in security_tracker[action_type].values())
+        
+        report.append(f"{display_name}:")
+        report.append(f"  Threshold: {threshold}")
+        report.append(f"  Active Users: {users_count}")
+        report.append(f"  Total Actions (24h): {total_actions}")
+        
+        if security_tracker[action_type]:
+            report.append("  Recent Activity:")
+            for user_id, timestamps in security_tracker[action_type].items():
+                try:
+                    user = guild.get_member(user_id)
+                    username = user.display_name if user else f"User ID: {user_id}"
+                    report.append(f"    {username}: {len(timestamps)} actions")
+                except:
+                    report.append(f"    User ID {user_id}: {len(timestamps)} actions")
+        report.append("")
+    
+    # Active Penalties
+    report.append("ACTIVE ROLE REMOVALS")
+    report.append("-" * 40)
+    if security_tracker['role_removals']:
+        for user_id, expiry_time in security_tracker['role_removals'].items():
+            try:
+                user = guild.get_member(user_id)
+                username = user.display_name if user else f"User ID: {user_id}"
+                time_left = expiry_time - now
+                hours_left = max(0, int(time_left.total_seconds() / 3600))
+                report.append(f"{username}: {hours_left} hours remaining")
+            except:
+                report.append(f"User ID {user_id}: Penalty active")
+    else:
+        report.append("No active role removals")
+    report.append("")
+    
+    # Security Timeline (last 24 hours)
+    report.append("SECURITY TIMELINE (Last 24 Hours)")
+    report.append("-" * 40)
+    
+    # Collect all events with timestamps
+    all_events = []
+    for action_type, display_name, _ in violations_details:
+        for user_id, timestamps in security_tracker[action_type].items():
+            try:
+                user = guild.get_member(user_id)
+                username = user.display_name if user else f"User ID: {user_id}"
+            except:
+                username = f"User ID: {user_id}"
+            
+            for timestamp in timestamps:
+                all_events.append((timestamp, display_name, username))
+    
+    # Sort by timestamp (most recent first)
+    all_events.sort(reverse=True)
+    
+    if all_events:
+        for timestamp, event_type, username in all_events[:20]:  # Last 20 events
+            report.append(f"{timestamp.strftime('%H:%M:%S')} - {event_type}: {username}")
+    else:
+        report.append("No security events in the last 24 hours")
+    report.append("")
+    
+    # Risk Assessment
+    report.append("RISK ASSESSMENT")
+    report.append("-" * 40)
+    
+    risk_factors = []
+    if sum(len(actions) for actions in security_tracker['everyone_mentions'].values()) > 5:
+        risk_factors.append("HIGH: Multiple @everyone/@here abuse incidents")
+    if sum(len(actions) for actions in security_tracker['bans'].values()) > 10:
+        risk_factors.append("HIGH: Excessive banning activity")
+    if sum(len(actions) for actions in security_tracker['channel_creations'].values()) > 10:
+        risk_factors.append("MEDIUM: High channel creation activity")
+    
+    if risk_factors:
+        for factor in risk_factors:
+            report.append(f"• {factor}")
+    else:
+        report.append("• LOW: No significant risk factors detected")
+    report.append("")
+    
+    # Recommendations
+    report.append("SECURITY RECOMMENDATIONS")
+    report.append("-" * 40)
+    
+    recommendations = [
+        "• Monitor users with multiple violations closely",
+        "• Consider implementing stricter role permissions for repeat offenders",
+        "• Review staff permissions if excessive moderation actions detected",
+        "• Enable audit log monitoring for all administrative actions",
+        "• Regular security reviews recommended (weekly)"
+    ]
+    
+    if active_penalties > 0:
+        recommendations.insert(0, f"• {active_penalties} users currently under role removal penalty")
+    
+    for rec in recommendations:
+        report.append(rec)
+    
+    report.append("")
+    report.append("=" * 80)
+    report.append("End of Report")
+    report.append("=" * 80)
+    
+    return "\n".join(report)
+
 # Slash Commands από τον αρχικό κώδικα
 
 @tree.command(name="dm", description="Στείλε μήνυμα σε κάποιον χρήστη (ιδιωτικό).")
