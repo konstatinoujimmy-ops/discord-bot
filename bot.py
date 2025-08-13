@@ -47,9 +47,9 @@ OWNER_ID = 839148474314129419
 active_mutes = {}
 dm2_sent_count = 0  # Μετρητής για τα DM του /dm2
 
-# YTDL & FFMPEG setup με την καλύτερη ποιότητα ήχου Discord
+# ULTRA PREMIUM AUDIO - Η απόλυτη καλύτερη ποιότητα για Discord
 ytdl_format_options = {
-    'format': 'bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a][acodec=aac]/bestaudio/best',
+    'format': 'bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a][acodec=aac]/bestaudio[abr>=128]/bestaudio/best',
     'quiet': True,
     'no_warnings': True,
     'default_search': 'ytsearch',
@@ -58,18 +58,21 @@ ytdl_format_options = {
     'audioformat': 'opus',
     'audioquality': '0',  # Καλύτερη ποιότητα (0 = best)
     'prefer_ffmpeg': True,
+    'ignoreerrors': False,
+    'writesubtitles': False,
+    'writeautomaticsub': False,
 }
 
-# Καθαρές FFMPEG ρυθμίσεις για Discord
+# PREMIUM ΠΟΙΟΤΗΤΑ - Η καλύτερη δυνατή για Discord
 ffmpeg_options = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
-    'options': '-vn'
+    'options': '-vn -filter:a "volume=0.8,dynaudnorm=f=150:g=15" -ar 48000 -ac 2 -b:a 128k'
 }
 
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
 
 class YTDLSource(discord.PCMVolumeTransformer):
-    def __init__(self, source, *, data, volume=0.5):
+    def __init__(self, source, *, data, volume=0.8):  # Βέλτιστο volume για καθαρό ήχο
         super().__init__(source, volume)
         self.data = data
         self.title = data.get('title')
