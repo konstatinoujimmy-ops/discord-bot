@@ -10,6 +10,7 @@ import asyncio
 import os
 import yt_dlp
 import logging
+import io
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -122,6 +123,9 @@ async def on_ready():
     
     # Start security cleanup task
     cleanup_security_logs.start()
+    
+    # Start heartbeat ping for extra reliability
+    heartbeat_ping.start()
 
 @bot.event
 async def on_command_error(ctx, error):
@@ -261,6 +265,27 @@ async def remove_all_roles_except_everyone(member: discord.Member, reason: str):
     except Exception as e:
         logger.error(f"Failed to remove roles from {member}: {e}")
         return False
+
+@tasks.loop(minutes=2)
+async def heartbeat_ping():
+    """Κάνει heartbeat ping κάθε 2 λεπτά για extra reliability"""
+    try:
+        import requests
+        import os
+        
+        dev_domain = os.getenv('REPLIT_DEV_DOMAIN', '')
+        if dev_domain:
+            url = f"https://{dev_domain}/ping"
+        else:
+            url = f"https://{os.getenv('REPL_SLUG', 'workspace')}.{os.getenv('REPL_OWNER', 'konstantinoudem')}.repl.co/ping"
+        
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            logger.info("💓 Heartbeat ping successful")
+        else:
+            logger.warning(f"💓 Heartbeat ping status: {response.status_code}")
+    except Exception as e:
+        logger.error(f"💓 Heartbeat ping failed: {e}")
 
 @tasks.loop(hours=1)
 async def cleanup_security_logs():

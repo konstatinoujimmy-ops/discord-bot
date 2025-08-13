@@ -26,8 +26,11 @@ Preferred communication style: Simple, everyday language.
 - Bot auto-restarts every ~20min (normal Replit behavior) and UptimeRobot immediately re-activates it
 - Ultra premium audio quality implemented with dynamic audio normalization
 - ULTIMATE SECURITY SYSTEM: Auto-monitors channels, @everyone mentions, bans, kicks, timeouts
-- Auto-ping system ensures 24/7 uptime without external services
+- Auto-ping system ensures 24/7 uptime without external services (improved to 3-minute intervals)
+- Double heartbeat system: Auto-ping (3min) + Bot heartbeat (2min) for maximum reliability
 - /security_status command accessible to owner and staff roles
+- /security_report command generates comprehensive security reports with detailed analysis
+- One-click security report generator with violation statistics, timeline, and risk assessment
 
 # System Architecture
 

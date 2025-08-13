@@ -15,7 +15,7 @@ class AutoPing:
     def __init__(self):
         self.running = False
         self.thread = None
-        self.ping_interval = 240  # 4 λεπτά σε δευτερόλεπτα
+        self.ping_interval = 180  # 3 λεπτά σε δευτερόλεπτα
         
     def get_ping_url(self):
         """Παίρνει το σωστό URL για ping"""
@@ -45,8 +45,12 @@ class AutoPing:
         """Κύριος βρόχος ping"""
         logger.info(f"🚀 Auto-ping started - pinging every {self.ping_interval//60} minutes")
         
+        # Κάνε αμέσως το πρώτο ping
+        if self.running:
+            self.ping_self()
+        
         while self.running:
-            # Περίμενε πρώτα, μετά κάνε ping
+            # Περίμενε, μετά κάνε ping
             time.sleep(self.ping_interval)
             
             if self.running:  # Έλεγχος ξανά μετά το sleep
