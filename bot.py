@@ -47,16 +47,23 @@ OWNER_ID = 839148474314129419
 active_mutes = {}
 dm2_sent_count = 0  # Μετρητής για τα DM του /dm2
 
-# YTDL & FFMPEG setup
+# YTDL & FFMPEG setup με καλύτερη ποιότητα ήχου
 ytdl_format_options = {
-    'format': 'bestaudio[acodec=opus]/bestaudio/best',
+    'format': 'bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a]/bestaudio/best',
     'quiet': True,
-    'default_search': 'auto',
-    'source_address': '0.0.0.0'
+    'no_warnings': True,
+    'default_search': 'ytsearch',
+    'source_address': '0.0.0.0',
+    'extractaudio': True,
+    'audioformat': 'opus',
+    'audioquality': 0,  # Καλύτερη ποιότητα
+    'prefer_ffmpeg': True,
 }
 
+# Βελτιωμένες FFMPEG ρυθμίσεις για τέλειο ήχο
 ffmpeg_options = {
-    'options': '-vn'
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
+    'options': '-vn -filter:a "volume=0.5" -threads 1'
 }
 
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
@@ -177,7 +184,69 @@ async def permissions(interaction: discord.Interaction):
     perms_list = [perm for perm, value in perms if value]
     await interaction.response.send_message(f"✅ Δικαιώματά σου:\n- " + "\n- ".join(perms_list), ephemeral=True)
 
-@tree.command(name="play", description="Παίξε μουσική από URL ή όνομα.")
+# Music Player Controls με Buttons
+class MusicControlView(discord.ui.View):
+    def __init__(self, voice_client, player):
+        super().__init__(timeout=300)  # 5 λεπτά timeout
+        self.voice_client = voice_client
+        self.player = player
+        self.is_paused = False
+
+    @discord.ui.button(label='⏸️ Stop', style=discord.ButtonStyle.red, custom_id='stop')
+    async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.voice_client and self.voice_client.is_playing():
+            self.voice_client.stop()
+            await interaction.response.send_message("⏹️ Μουσική σταμάτησε!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Δεν παίζει μουσική!", ephemeral=True)
+
+    @discord.ui.button(label='▶️ Start/Pause', style=discord.ButtonStyle.green, custom_id='start_pause')
+    async def start_pause_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.voice_client:
+            if self.voice_client.is_playing():
+                self.voice_client.pause()
+                self.is_paused = True
+                button.label = '▶️ Resume'
+                await interaction.response.edit_message(view=self)
+                await interaction.followup.send("⏸️ Μουσική σε παύση!", ephemeral=True)
+            elif self.voice_client.is_paused():
+                self.voice_client.resume()
+                self.is_paused = False
+                button.label = '⏸️ Pause'
+                await interaction.response.edit_message(view=self)
+                await interaction.followup.send("▶️ Μουσική συνεχίζει!", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ Δεν παίζει μουσική!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Δεν είμαι συνδεδεμένος!", ephemeral=True)
+
+    @discord.ui.button(label='🔊 Φωνή', style=discord.ButtonStyle.blurple, custom_id='volume')
+    async def volume_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.voice_client and hasattr(self.voice_client.source, 'volume'):
+            current_volume = self.voice_client.source.volume * 100
+            await interaction.response.send_message(f"🔊 Τρέχουσα ένταση: {current_volume:.0f}%\nΧρησιμοποιήστε `/volume [0-100]` για αλλαγή!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Δεν μπορώ να ελέγξω την ένταση αυτή τη στιγμή!", ephemeral=True)
+
+    @discord.ui.button(label='📜 Info', style=discord.ButtonStyle.gray, custom_id='info')
+    async def info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.player and hasattr(self.player, 'title'):
+            embed = discord.Embed(
+                title="🎵 Τώρα Παίζει",
+                description=f"**{self.player.title}**",
+                color=discord.Color.blue()
+            )
+            if hasattr(self.player, 'webpage_url'):
+                embed.add_field(name="🔗 Link", value=self.player.webpage_url, inline=False)
+            if hasattr(self.player, 'thumbnail'):
+                embed.set_thumbnail(url=self.player.thumbnail)
+            
+            embed.add_field(name="🎛️ Controls", value="Χρησιμοποιήστε τα buttons για έλεγχο!", inline=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Δεν βρέθηκαν πληροφορίες!", ephemeral=True)
+
+@tree.command(name="play", description="Παίξε μουσική από URL ή όνομα με πλήρη controls.")
 @app_commands.describe(url="URL ή όνομα τραγουδιού")
 async def play(interaction: discord.Interaction, url: str):
     if not interaction.user.voice or not interaction.user.voice.channel:
@@ -187,19 +256,66 @@ async def play(interaction: discord.Interaction, url: str):
     channel = interaction.user.voice.channel  
     voice_client = interaction.guild.voice_client  
 
+    # Defer response για να έχουμε χρόνο για processing
+    await interaction.response.defer()
+
     if not voice_client:  
         voice_client = await channel.connect()  
     elif voice_client.channel != channel:  
         await voice_client.move_to(channel)  
 
     try:
-        player = await YTDLSource.from_url(url, loop=bot.loop, stream=True)  
+        # Καλύτερες ρυθμίσεις ήχου
+        player = await YTDLSource.from_url(url, loop=bot.loop, stream=True)
+        
         if voice_client.is_playing():  
             voice_client.stop()  
-        voice_client.play(player)  
-        await interaction.response.send_message(f"▶️ Παίζει: {player.title}", ephemeral=False)
+        
+        # Παίξιμο με καλύτερη ποιότητα
+        voice_client.play(player, after=lambda e: logger.error(f'Player error: {e}') if e else None)
+        
+        # Δημιουργία embed με πληροφορίες
+        embed = discord.Embed(
+            title="🎵 Τώρα Παίζει",
+            description=f"**{player.title}**",
+            color=discord.Color.green()
+        )
+        
+        if hasattr(player, 'webpage_url') and player.webpage_url:
+            embed.add_field(name="🔗 Link", value=f"[Άνοιγμα στο YouTube]({player.webpage_url})", inline=True)
+        
+        embed.add_field(name="🎛️ Controls", value="Χρησιμοποιήστε τα buttons παρακάτω!", inline=False)
+        embed.set_footer(text="🎧 Απολαύστε τη μουσική!")
+        
+        if hasattr(player, 'thumbnail') and player.thumbnail:
+            embed.set_thumbnail(url=player.thumbnail)
+        
+        # Δημιουργία control view
+        view = MusicControlView(voice_client, player)
+        
+        await interaction.followup.send(embed=embed, view=view)
+        
     except Exception as e:
-        await interaction.response.send_message(f"❌ Σφάλμα στη μουσική: {e}", ephemeral=True)
+        logger.error(f"Music play error: {e}")
+        await interaction.followup.send(f"❌ Σφάλμα στη μουσική: {str(e)}", ephemeral=True)
+
+@tree.command(name="volume", description="Άλλαξε την ένταση της μουσικής (0-100).")
+@app_commands.describe(volume="Ένταση από 0 έως 100")
+async def volume(interaction: discord.Interaction, volume: int):
+    if not interaction.guild.voice_client:
+        await interaction.response.send_message("❌ Δεν είμαι συνδεδεμένος σε φωνητικό κανάλι!", ephemeral=True)
+        return
+    
+    if not 0 <= volume <= 100:
+        await interaction.response.send_message("❌ Η ένταση πρέπει να είναι μεταξύ 0 και 100!", ephemeral=True)
+        return
+    
+    voice_client = interaction.guild.voice_client
+    if voice_client.source and hasattr(voice_client.source, 'volume'):
+        voice_client.source.volume = volume / 100.0
+        await interaction.response.send_message(f"🔊 Ένταση ρυθμίστηκε στο {volume}%!", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ Δεν μπορώ να ρυθμίσω την ένταση αυτή τη στιγμή!", ephemeral=True)
 
 @tree.command(name="disconnect", description="Αποσυνδέσου από το φωνητικό κανάλι.")
 async def disconnect(interaction: discord.Interaction):
