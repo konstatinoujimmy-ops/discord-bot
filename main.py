@@ -48,7 +48,7 @@ def main():
         logger.error(f"Critical error in main: {e}")
         # Auto-restart mechanism
         logger.info("Attempting to restart in 10 seconds...")
-        time.sleep(10)
+        time.sleep(30)
         main()
 
 if __name__ == "__main__":

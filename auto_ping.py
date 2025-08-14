@@ -43,7 +43,7 @@ class AutoPing:
     
     def ping_loop(self):
         """Κύριος βρόχος ping"""
-        logger.info(f"🚀 Auto-ping started - pinging every {self.ping_interval//60} minutes")
+        logger.info(f"🚀 Auto-ping started - pinging every {self.ping_interval//10} minutes")
         
         # Κάνε αμέσως το πρώτο ping
         if self.running:
