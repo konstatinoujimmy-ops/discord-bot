@@ -150,22 +150,3 @@ def keep_alive():
     except Exception as e:
         logger.error(f"Failed to start keep-alive server: {e}")
         return None
-
-
-# --- Κρατά το Replit project "ξύπνιο" ---
-keep_alive()
-
-# --- Discord bot ---
-intents = discord.Intents.default()
-client = discord.Client(intents=intents)
-
-@client.event
-async def on_ready():
-    print(f"✅ Συνδέθηκε ως {client.user}")
-
-@client.event
-async def on_disconnect():
-    print("⚠ Αποσυνδέθηκε, προσπαθώ επανασύνδεση...")
-
-# Auto-reconnect ενεργό
-client.run("ΒΑΛΕ_ΤΟ_TOKEN_ΣΟΥ_ΕΔΩ", reconnect=True)

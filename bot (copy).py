@@ -1,0 +1,978 @@
+"""
+Discord Bot Implementation με 24/7 Keep-Alive
+Περιέχει όλες τις εντολές και event handlers του bot
+"""
+
+import discord
+from discord.ext import commands, tasks
+from discord import app_commands
+import asyncio
+import os
+import yt_dlp
+import logging
+import io
+from datetime import datetime, timedelta
+from collections import defaultdict
+
+# Configure logging
+logger = logging.getLogger(__name__)
+
+# Opus loading για audio support
+if not discord.opus.is_loaded():
+    try:
+        discord.opus.load_opus('opus')
+    except OSError:
+        try:
+            discord.opus.load_opus('libopus.so.0')
+        except OSError:
+            try:
+                discord.opus.load_opus('libopus.so')
+            except OSError:
+                logger.warning("Warning: Could not load Opus library - μουσική ίσως να μην δουλέψει")
+
+# Bot configuration
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+tree = bot.tree
+
+# Configuration από τον αρχικό κώδικα
+STAFF_ROLE_IDS = {
+    1250890557279178864,
+    1293607647223746661,
+    1292372795631603847
+}
+OWNER_ID = 839148474314129419
+
+active_mutes = {}
+dm2_sent_count = 0  # Μετρητής για τα DM του /dm2
+
+# Security monitoring system
+security_tracker = {
+    'channel_creations': defaultdict(list),
+    'everyone_mentions': defaultdict(list),
+    'bans': defaultdict(list),
+    'kicks': defaultdict(list),
+    'timeouts': defaultdict(list),
+    'role_removals': {}  # user_id: removal_time
+}
+
+# ULTRA PREMIUM AUDIO - Η απόλυτη καλύτερη ποιότητα για Discord
+ytdl_format_options = {
+    'format': 'bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a][acodec=aac]/bestaudio[abr>=128]/bestaudio/best',
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'ytsearch',
+    'source_address': '0.0.0.0',
+    'extractaudio': True,
+    'audioformat': 'opus',
+    'audioquality': '0',  # Καλύτερη ποιότητα (0 = best)
+    'prefer_ffmpeg': True,
+    'ignoreerrors': False,
+    'writesubtitles': False,
+    'writeautomaticsub': False,
+}
+
+# PREMIUM ΠΟΙΟΤΗΤΑ - Η καλύτερη δυνατή για Discord
+ffmpeg_options = {
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
+    'options': '-vn -filter:a "volume=0.8,dynaudnorm=f=150:g=15" -ar 48000 -ac 2 -b:a 128k'
+}
+
+ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
+
+class YTDLSource(discord.PCMVolumeTransformer):
+    def __init__(self, source, *, data, volume=0.8):  # Βέλτιστο volume για καθαρό ήχο
+        super().__init__(source, volume)
+        self.data = data
+        self.title = data.get('title')
+        self.thumbnail = data.get('thumbnail')
+        self.webpage_url = data.get('webpage_url')
+
+    @classmethod  
+    async def from_url(cls, url, *, loop=None, stream=True):  
+        loop = loop or asyncio.get_event_loop()  
+        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))  
+        if 'entries' in data:  
+            data = data['entries'][0]  
+        filename = data['url'] if stream else ytdl.prepare_filename(data)  
+        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+
+@bot.event
+async def on_ready():
+    """Event triggered when bot is ready"""
+    try:
+        synced = await tree.sync()
+        logger.info(f"✅ Synced {len(synced)} slash commands")
+    except Exception as e:
+        logger.error(f"❌ Failed to sync commands: {e}")
+    
+    logger.info(f"✅ Bot online ως {bot.user}")
+    logger.info(f'Bot ID: {bot.user.id if bot.user else "Unknown"}')
+    logger.info(f'Guilds: {len(bot.guilds)}')
+    
+    # Set bot status
+    await bot.change_presence(
+        activity=discord.Activity(
+            type=discord.ActivityType.watching, 
+            name="🛡️ Security Monitor 24/7"
+        )
+    )
+    
+    # Start security cleanup task
+    cleanup_security_logs.start()
+    
+    # Start heartbeat ping for extra reliability
+    heartbeat_ping.start()
+
+@bot.event
+async def on_command_error(ctx, error):
+    """Handle command errors"""
+    logger.error(f"Command error: {error}")
+    if isinstance(error, commands.CommandNotFound):
+        return
+    await ctx.send(f"❌ Σφάλμα: {error}")
+
+@bot.event
+async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
+    """Handle slash command errors"""
+    logger.error(f"Slash command error: {error}")
+    if interaction.response.is_done():
+        await interaction.followup.send(f"❌ Σφάλμα: {error}", ephemeral=True)
+    else:
+        await interaction.response.send_message(f"❌ Σφάλμα: {error}", ephemeral=True)
+
+# SECURITY EVENT HANDLERS
+
+@bot.event
+async def on_guild_channel_create(channel):
+    """Παρακολουθεί τη δημιουργία νέων channels"""
+    if hasattr(channel, 'guild') and channel.guild:
+        async for entry in channel.guild.audit_logs(action=discord.AuditLogAction.channel_create, limit=1):
+            if entry.user and entry.user.id != OWNER_ID:
+                # Έλεγχος rate limit για δημιουργία channels (3+ σε 10 λεπτά)
+                if await check_rate_limit(entry.user.id, 'channel_creations', 2, 10):
+                    member = channel.guild.get_member(entry.user.id)
+                    if member:
+                        await remove_all_roles_except_everyone(
+                            member, 
+                            f"Rapid channel creation (3+ channels in 10 minutes)"
+                        )
+            break
+
+@bot.event
+async def on_message(message):
+    """Παρακολουθεί μηνύματα για @everyone/@here mentions"""
+    if message.author.id == OWNER_ID or message.author.bot:
+        return
+    
+    # Έλεγχος για @everyone ή @here mentions
+    if message.mention_everyone or '@everyone' in message.content or '@here' in message.content:
+        # Έλεγχος rate limit (2+ mentions)
+        if await check_rate_limit(message.author.id, 'everyone_mentions', 1, 60):
+            await remove_all_roles_except_everyone(
+                message.author,
+                f"Multiple @everyone/@here mentions (10 hour penalty)"
+            )
+    
+    await bot.process_commands(message)
+
+@bot.event
+async def on_member_ban(guild, user):
+    """Παρακολουθεί bans"""
+    async for entry in guild.audit_logs(action=discord.AuditLogAction.ban, limit=1):
+        if entry.user and entry.user.id != OWNER_ID:
+            # Έλεγχος rate limit για bans (5+ bans)
+            if await check_rate_limit(entry.user.id, 'bans', 4, 60):
+                member = guild.get_member(entry.user.id)
+                if member:
+                    await remove_all_roles_except_everyone(
+                        member,
+                        f"Excessive banning (5+ bans in 1 hour)"
+                    )
+        break
+
+@bot.event
+async def on_member_remove(member):
+    """Παρακολουθεί kicks"""
+    if member.guild:
+        async for entry in member.guild.audit_logs(action=discord.AuditLogAction.kick, limit=1):
+            if entry.user and entry.user.id != OWNER_ID and entry.target.id == member.id:
+                # Έλεγχος rate limit για kicks (11+ kicks)
+                if await check_rate_limit(entry.user.id, 'kicks', 10, 60):
+                    perpetrator = member.guild.get_member(entry.user.id)
+                    if perpetrator:
+                        await remove_all_roles_except_everyone(
+                            perpetrator,
+                            f"Excessive kicking (11+ kicks in 1 hour)"
+                        )
+            break
+
+@bot.event
+async def on_member_update(before, after):
+    """Παρακολουθεί timeouts"""
+    # Έλεγχος αν ο χρήστης έλαβε timeout
+    if before.timed_out_until is None and after.timed_out_until is not None:
+        async for entry in after.guild.audit_logs(action=discord.AuditLogAction.member_update, limit=1):
+            if (entry.user and entry.user.id != OWNER_ID and 
+                entry.target.id == after.id and 
+                hasattr(entry.changes, 'timed_out_until')):
+                
+                # Έλεγχος rate limit για timeouts (11+ timeouts)
+                if await check_rate_limit(entry.user.id, 'timeouts', 10, 60):
+                    perpetrator = after.guild.get_member(entry.user.id)
+                    if perpetrator:
+                        await remove_all_roles_except_everyone(
+                            perpetrator,
+                            f"Excessive timeouts (11+ timeouts in 1 hour)"
+                        )
+            break
+
+def is_staff_or_owner(member: discord.Member) -> bool:
+    """Έλεγχος αν ο χρήστης είναι staff ή owner"""
+    return member.id == OWNER_ID or any(role.id in STAFF_ROLE_IDS for role in member.roles)
+
+async def remove_all_roles_except_everyone(member: discord.Member, reason: str):
+    """Αφαιρεί όλα τα roles από έναν χρήστη εκτός του @everyone"""
+    try:
+        # Αφαιρούμε όλα τα roles εκτός του @everyone
+        roles_to_remove = [role for role in member.roles if role.name != "@everyone"]
+        if roles_to_remove:
+            await member.remove_roles(*roles_to_remove, reason=f"🛡️ Security violation: {reason}")
+            
+            # Αποθηκεύουμε την ώρα αφαίρεσης για τα @everyone/@here mentions (10 ώρες)
+            if "everyone/here mentions" in reason:
+                security_tracker['role_removals'][member.id] = datetime.now() + timedelta(hours=10)
+            
+            # Ειδοποίηση στον owner
+            owner = bot.get_user(OWNER_ID)
+            if owner:
+                embed = discord.Embed(
+                    title="🚨 SECURITY ALERT",
+                    description=f"**User:** {member.mention} ({member.id})\n**Reason:** {reason}\n**Action:** All roles removed",
+                    color=discord.Color.red(),
+                    timestamp=datetime.now()
+                )
+                try:
+                    await owner.send(embed=embed)
+                except:
+                    pass
+            
+            logger.warning(f"🛡️ SECURITY: Removed all roles from {member} - {reason}")
+            return True
+    except Exception as e:
+        logger.error(f"Failed to remove roles from {member}: {e}")
+        return False
+
+@tasks.loop(minutes=2)
+async def heartbeat_ping():
+    """Κάνει heartbeat ping κάθε 2 λεπτά για extra reliability"""
+    try:
+        import requests
+        import os
+        
+        dev_domain = os.getenv('REPLIT_DEV_DOMAIN', '')
+        if dev_domain:
+            url = f"https://{dev_domain}/ping"
+        else:
+            url = f"https://{os.getenv('REPL_SLUG', 'workspace')}.{os.getenv('REPL_OWNER', 'konstantinoudem')}.repl.co/ping"
+        
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            logger.info("💓 Heartbeat ping successful")
+        else:
+            logger.warning(f"💓 Heartbeat ping status: {response.status_code}")
+    except Exception as e:
+        logger.error(f"💓 Heartbeat ping failed: {e}")
+
+@tasks.loop(hours=1)
+async def cleanup_security_logs():
+    """Καθαρίζει τα παλιά logs ασφαλείας κάθε ώρα"""
+    now = datetime.now()
+    cutoff_time = now - timedelta(hours=24)  # Κρατάμε logs για 24 ώρες
+    
+    # Καθαρισμός παλιών entries
+    for action_type in ['channel_creations', 'everyone_mentions', 'bans', 'kicks', 'timeouts']:
+        for user_id in list(security_tracker[action_type].keys()):
+            security_tracker[action_type][user_id] = [
+                timestamp for timestamp in security_tracker[action_type][user_id] 
+                if timestamp > cutoff_time
+            ]
+            if not security_tracker[action_type][user_id]:
+                del security_tracker[action_type][user_id]
+    
+    # Καθαρισμός expired role removals
+    expired_users = [
+        user_id for user_id, expiry_time in security_tracker['role_removals'].items()
+        if now > expiry_time
+    ]
+    for user_id in expired_users:
+        del security_tracker['role_removals'][user_id]
+
+async def check_rate_limit(user_id: int, action_type: str, limit: int, window_minutes: int = 60) -> bool:
+    """Ελέγχει αν ο χρήστης έχει υπερβεί το όριο για μια ενέργεια"""
+    now = datetime.now()
+    cutoff_time = now - timedelta(minutes=window_minutes)
+    
+    # Καθαρισμός παλιών entries
+    security_tracker[action_type][user_id] = [
+        timestamp for timestamp in security_tracker[action_type][user_id] 
+        if timestamp > cutoff_time
+    ]
+    
+    # Προσθήκη του τρέχοντος timestamp
+    security_tracker[action_type][user_id].append(now)
+    
+    # Έλεγχος αν υπερβαίνει το όριο
+    return len(security_tracker[action_type][user_id]) > limit
+
+# SECURITY COMMANDS
+
+@tree.command(name="security_status", description="Εμφανίζει την κατάσταση ασφαλείας του server")
+async def security_status(interaction: discord.Interaction):
+    """Εμφανίζει αναλυτικά stats ασφαλείας"""
+    # Έλεγχος αν είναι owner ή staff
+    if not is_staff_or_owner(interaction.user):
+        await interaction.response.send_message("❌ Μόνο ο owner και το staff μπορούν να δουν τα security stats!", ephemeral=True)
+        return
+    
+    embed = discord.Embed(
+        title="🛡️ Security Monitor Status", 
+        color=discord.Color.blue(),
+        timestamp=datetime.now()
+    )
+    
+    # Στατιστικά για κάθε τύπο violation
+    for action_type, display_name in [
+        ('channel_creations', 'Channel Creations'),
+        ('everyone_mentions', '@everyone/@here Mentions'),
+        ('bans', 'Bans'),
+        ('kicks', 'Kicks'),
+        ('timeouts', 'Timeouts')
+    ]:
+        active_users = len(security_tracker[action_type])
+        total_actions = sum(len(actions) for actions in security_tracker[action_type].values())
+        embed.add_field(
+            name=f"📊 {display_name}",
+            value=f"Active users: {active_users}\nTotal actions: {total_actions}",
+            inline=True
+        )
+    
+    # Role removals που είναι σε ισχύ
+    active_removals = len(security_tracker['role_removals'])
+    embed.add_field(
+        name="🚫 Active Role Removals",
+        value=f"{active_removals} users currently without roles",
+        inline=True
+    )
+    
+    embed.set_footer(text="Monitoring 24/7 | Auto-cleanup every hour")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@tree.command(name="security_report", description="Generates a comprehensive security report")
+async def security_report(interaction: discord.Interaction):
+    """Generates a detailed security report with all violations and statistics"""
+    if not is_staff_or_owner(interaction.user):
+        await interaction.response.send_message("❌ Only owner and staff can generate security reports!", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    # Generate comprehensive report
+    report_content = generate_security_report(interaction.guild)
+    
+    # Create a text file with the report
+    report_file = discord.File(
+        fp=io.StringIO(report_content),
+        filename=f"security_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    )
+    
+    # Create summary embed
+    summary_embed = discord.Embed(
+        title="🛡️ Security Report Generated",
+        description="Complete security analysis attached as file",
+        color=discord.Color.green(),
+        timestamp=datetime.now()
+    )
+    
+    summary_embed.add_field(
+        name="📊 Report Contents",
+        value="• Violation statistics\n• User activity logs\n• Security timeline\n• Risk assessment\n• Recommendations",
+        inline=False
+    )
+    
+    await interaction.followup.send(
+        embed=summary_embed,
+        file=report_file,
+        ephemeral=True
+    )
+
+def generate_security_report(guild) -> str:
+    """Generates comprehensive security report content"""
+    now = datetime.now()
+    report = []
+    
+    # Header
+    report.append("=" * 80)
+    report.append(f"SECURITY REPORT - {guild.name}")
+    report.append(f"Generated: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+    report.append("=" * 80)
+    report.append("")
+    
+    # Executive Summary
+    report.append("EXECUTIVE SUMMARY")
+    report.append("-" * 40)
+    total_violations = 0
+    active_penalties = len(security_tracker['role_removals'])
+    
+    for action_type in ['channel_creations', 'everyone_mentions', 'bans', 'kicks', 'timeouts']:
+        total_violations += sum(len(actions) for actions in security_tracker[action_type].values())
+    
+    report.append(f"Total Security Violations (24h): {total_violations}")
+    report.append(f"Users Currently Penalized: {active_penalties}")
+    report.append(f"Security Status: {'HIGH RISK' if total_violations > 50 else 'MODERATE RISK' if total_violations > 20 else 'LOW RISK'}")
+    report.append("")
+    
+    # Detailed Statistics
+    report.append("DETAILED VIOLATION STATISTICS")
+    report.append("-" * 40)
+    
+    violations_details = [
+        ('channel_creations', 'Rapid Channel Creation', '3+ channels in 10 minutes'),
+        ('everyone_mentions', '@everyone/@here Abuse', '2+ mentions in 1 hour (10h penalty)'),
+        ('bans', 'Excessive Banning', '5+ bans in 1 hour'),
+        ('kicks', 'Excessive Kicking', '11+ kicks in 1 hour'),
+        ('timeouts', 'Excessive Timeouts', '11+ timeouts in 1 hour')
+    ]
+    
+    for action_type, display_name, threshold in violations_details:
+        users_count = len(security_tracker[action_type])
+        total_actions = sum(len(actions) for actions in security_tracker[action_type].values())
+        
+        report.append(f"{display_name}:")
+        report.append(f"  Threshold: {threshold}")
+        report.append(f"  Active Users: {users_count}")
+        report.append(f"  Total Actions (24h): {total_actions}")
+        
+        if security_tracker[action_type]:
+            report.append("  Recent Activity:")
+            for user_id, timestamps in security_tracker[action_type].items():
+                try:
+                    user = guild.get_member(user_id)
+                    username = user.display_name if user else f"User ID: {user_id}"
+                    report.append(f"    {username}: {len(timestamps)} actions")
+                except:
+                    report.append(f"    User ID {user_id}: {len(timestamps)} actions")
+        report.append("")
+    
+    # Active Penalties
+    report.append("ACTIVE ROLE REMOVALS")
+    report.append("-" * 40)
+    if security_tracker['role_removals']:
+        for user_id, expiry_time in security_tracker['role_removals'].items():
+            try:
+                user = guild.get_member(user_id)
+                username = user.display_name if user else f"User ID: {user_id}"
+                time_left = expiry_time - now
+                hours_left = max(0, int(time_left.total_seconds() / 3600))
+                report.append(f"{username}: {hours_left} hours remaining")
+            except:
+                report.append(f"User ID {user_id}: Penalty active")
+    else:
+        report.append("No active role removals")
+    report.append("")
+    
+    # Security Timeline (last 24 hours)
+    report.append("SECURITY TIMELINE (Last 24 Hours)")
+    report.append("-" * 40)
+    
+    # Collect all events with timestamps
+    all_events = []
+    for action_type, display_name, _ in violations_details:
+        for user_id, timestamps in security_tracker[action_type].items():
+            try:
+                user = guild.get_member(user_id)
+                username = user.display_name if user else f"User ID: {user_id}"
+            except:
+                username = f"User ID: {user_id}"
+            
+            for timestamp in timestamps:
+                all_events.append((timestamp, display_name, username))
+    
+    # Sort by timestamp (most recent first)
+    all_events.sort(reverse=True)
+    
+    if all_events:
+        for timestamp, event_type, username in all_events[:20]:  # Last 20 events
+            report.append(f"{timestamp.strftime('%H:%M:%S')} - {event_type}: {username}")
+    else:
+        report.append("No security events in the last 24 hours")
+    report.append("")
+    
+    # Risk Assessment
+    report.append("RISK ASSESSMENT")
+    report.append("-" * 40)
+    
+    risk_factors = []
+    if sum(len(actions) for actions in security_tracker['everyone_mentions'].values()) > 5:
+        risk_factors.append("HIGH: Multiple @everyone/@here abuse incidents")
+    if sum(len(actions) for actions in security_tracker['bans'].values()) > 10:
+        risk_factors.append("HIGH: Excessive banning activity")
+    if sum(len(actions) for actions in security_tracker['channel_creations'].values()) > 10:
+        risk_factors.append("MEDIUM: High channel creation activity")
+    
+    if risk_factors:
+        for factor in risk_factors:
+            report.append(f"• {factor}")
+    else:
+        report.append("• LOW: No significant risk factors detected")
+    report.append("")
+    
+    # Recommendations
+    report.append("SECURITY RECOMMENDATIONS")
+    report.append("-" * 40)
+    
+    recommendations = [
+        "• Monitor users with multiple violations closely",
+        "• Consider implementing stricter role permissions for repeat offenders",
+        "• Review staff permissions if excessive moderation actions detected",
+        "• Enable audit log monitoring for all administrative actions",
+        "• Regular security reviews recommended (weekly)"
+    ]
+    
+    if active_penalties > 0:
+        recommendations.insert(0, f"• {active_penalties} users currently under role removal penalty")
+    
+    for rec in recommendations:
+        report.append(rec)
+    
+    report.append("")
+    report.append("=" * 80)
+    report.append("End of Report")
+    report.append("=" * 80)
+    
+    return "\n".join(report)
+
+# Slash Commands από τον αρχικό κώδικα
+
+@tree.command(name="dm", description="Στείλε μήνυμα σε κάποιον χρήστη (ιδιωτικό).")
+@app_commands.describe(user="User to send message", message="The message to send")
+async def dm(interaction: discord.Interaction, user: discord.User, message: str):
+    if not is_staff_or_owner(interaction.user):
+        await interaction.response.send_message("❌ Δεν έχεις δικαιώματα.", ephemeral=True)
+        return
+    try:
+        await user.send(message)
+        await interaction.response.send_message(f"✅ Μήνυμα σταλθηκε σε {user}.", ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Σφάλμα: {e}", ephemeral=True)
+
+@tree.command(name="dm2", description="Μαζικό DM σε μέλη ενός ρόλου.")
+@app_commands.describe(role="Ο ρόλος στον οποίο ανήκουν οι χρήστες", message="Μήνυμα για αποστολή")
+async def dm2(interaction: discord.Interaction, role: discord.Role, message: str):
+    global dm2_sent_count
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Μόνο ο owner μπορεί να το χρησιμοποιήσει.", ephemeral=True)
+        return
+
+    members = [m for m in role.members if not m.bot]  
+    dm2_sent_count = 0  
+    await interaction.response.send_message(f"📤 Στέλνω μηνύματα σε μέλη με ρόλο {role.name}...")  
+
+    for member in members:  
+        try:  
+            await member.send(message)  
+            dm2_sent_count += 1  
+            await asyncio.sleep(12)  # delay 12 δευτερολέπτων μεταξύ κάθε DM  
+        except:  
+            pass
+
+@tree.command(name="dm2_status", description="Πόσα μηνύματα έχουν σταλθεί με το /dm2")
+async def dm2_status(interaction: discord.Interaction):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Δεν έχεις δικαιώματα.", ephemeral=True)
+        return
+    await interaction.response.send_message(f"✉️ Έχουν σταλεί μηνύματα σε {dm2_sent_count} μέλη μέχρι τώρα.", ephemeral=True)
+
+@tree.command(name="mute", description="Mute έναν χρήστη (για admins).")
+@app_commands.describe(user="User to mute", duration="Duration σε λεπτά (προαιρετικό)")
+async def mute(interaction: discord.Interaction, user: discord.Member, duration: int = None):
+    if not is_staff_or_owner(interaction.user):
+        await interaction.response.send_message("❌ Δεν έχεις δικαιώματα.", ephemeral=True)
+        return
+
+    mute_role = discord.utils.get(interaction.guild.roles, name="Muted")  
+    if not mute_role:  
+        mute_role = await interaction.guild.create_role(name="Muted")  
+        for ch in interaction.guild.channels:  
+            await ch.set_permissions(mute_role, speak=False, send_messages=False, read_message_history=True, read_messages=False)  
+
+    await user.add_roles(mute_role)  
+    active_mutes[user.id] = True  
+    await interaction.response.send_message(f"🔇 Ο {user} muteάρισε.", ephemeral=True)  
+
+    if duration:  
+        await asyncio.sleep(duration * 60)  
+        if active_mutes.get(user.id):  
+            await user.remove_roles(mute_role)  
+            active_mutes.pop(user.id, None)
+
+@tree.command(name="announce", description="Ανακοίνωση σε συγκεκριμένο κανάλι.")
+@app_commands.describe(channel="Κανάλι για την ανακοίνωση", message="Το μήνυμα ανακοίνωσης")
+async def announce(interaction: discord.Interaction, channel: discord.TextChannel, message: str):
+    if not is_staff_or_owner(interaction.user):
+        await interaction.response.send_message("❌ Δεν έχεις δικαιώματα.", ephemeral=True)
+        return
+    await channel.send(message)
+    await interaction.response.send_message(f"✅ Ανακοίνωση στάλθηκε στο {channel.mention}.", ephemeral=True)
+
+@tree.command(name="permissions", description="Δες τα δικαιώματά σου.")
+async def permissions(interaction: discord.Interaction):
+    perms = interaction.channel.permissions_for(interaction.user)
+    perms_list = [perm for perm, value in perms if value]
+    await interaction.response.send_message(f"✅ Δικαιώματά σου:\n- " + "\n- ".join(perms_list), ephemeral=True)
+
+# Προστασία από staff abuse για role permissions
+@bot.event
+async def on_member_update(before, after):
+    """Προστασία από αλλαγές permissions σε roles από staff - ΕΙΔΙΚΑ BAN PERMISSIONS"""
+    # Αν δεν είναι αλλαγή ρόλων, επιστροφή
+    if before.roles == after.roles:
+        return
+    
+    # Αν ο χρήστης που έκανε την αλλαγή είναι owner, επιτρέπεται
+    if after.id == OWNER_ID:
+        return
+    
+    # Βρες ποιοι ρόλοι προστέθηκαν
+    added_roles = set(after.roles) - set(before.roles)
+    
+    # Έλεγχος για BAN PERMISSIONS - ΑΠΑΓΟΡΕΥΜΕΝΟ για όλους εκτός owner
+    for role in added_roles:
+        role_perms = role.permissions
+        if role_perms.ban_members or role_perms.administrator:
+            # ΑΦΑΙΡΕΣΗ του ρόλου αμέσως αν έχει ban permissions
+            try:
+                await after.remove_roles(role, reason="Απαγορευμένα ban permissions - μόνο owner")
+                logger.warning(f"🚫 BLOCKED: Αφαίρεσα ρόλο {role.name} από {after.mention} - ban permissions!")
+                
+                # Ειδοποίηση σε DM στον owner
+                owner = bot.get_user(OWNER_ID)
+                if owner:
+                    embed = discord.Embed(
+                        title="🚫 SECURITY ALERT: Ban Permission Blocked",
+                        description=f"Αφαίρεσα ρόλο **{role.name}** από {after.mention}",
+                        color=discord.Color.red()
+                    )
+                    embed.add_field(name="Λόγος", value="Ρόλος με ban permissions - μόνο εσύ μπορείς να τον δώσεις", inline=False)
+                    embed.add_field(name="Χρόνος", value=f"<t:{int(datetime.utcnow().timestamp())}:F>", inline=False)
+                    await owner.send(embed=embed)
+                    
+            except discord.Forbidden:
+                logger.error(f"❌ Δεν μπόρεσα να αφαιρέσω ρόλο {role.name} από {after.mention}")
+        
+        # Καταγραφή άλλων επικίνδυνων permissions
+        elif any(getattr(role_perms, perm, False) for perm in ['manage_guild', 'manage_roles', 'manage_channels', 'kick_members']):
+            logger.warning(f"⚠️ Επικίνδυνος ρόλος {role.name} δόθηκε στο {after.mention}")
+
+@tree.command(name="protect_roles", description="Ενεργοποίηση προστασίας ρόλων (Owner μόνο)")
+async def protect_roles(interaction: discord.Interaction):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Μόνο ο owner μπορεί να χρησιμοποιήσει αυτή την εντολή.", ephemeral=True)
+        return
+    
+    embed = discord.Embed(
+        title="🛡️ Προστασία Ρόλων Ενεργή",
+        description="Το bot **ΑΥΤΟΜΑΤΑ ΑΦΑΙΡΕΙ** ban permissions από όλους εκτός owner",
+        color=discord.Color.red()
+    )
+    embed.add_field(
+        name="🚫 ΑΥΤΟΜΑΤΗ ΑΦΑΙΡΕΣΗ:",
+        value="• Ban Members (ΑΠΑΓΟΡΕΥΜΕΝΟ)\n• Administrator (ΑΠΑΓΟΡΕΥΜΕΝΟ)",
+        inline=False
+    )
+    embed.add_field(
+        name="⚠️ Παρακολούθηση:",
+        value="• Manage Server\n• Manage Roles\n• Manage Channels\n• Kick Members",
+        inline=False
+    )
+    embed.add_field(
+        name="✅ Ασφάλεια:",
+        value="Μόνο ο Owner μπορεί να έχει ban permissions",
+        inline=False
+    )
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# Επιπλέον προστασία για ban command
+@tree.command(name="ban", description="Ban χρήστη (ΜΟΝΟ OWNER)")
+@app_commands.describe(user="Χρήστης για ban", reason="Λόγος ban")
+async def ban_user(interaction: discord.Interaction, user: discord.Member, reason: str = "Δεν δόθηκε λόγος"):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("🚫 **ΑΠΑΓΟΡΕΥΜΕΝΟ**: Μόνο ο owner μπορεί να κάνει ban!", ephemeral=True)
+        return
+    
+    try:
+        await user.ban(reason=f"Ban από owner: {reason}")
+        embed = discord.Embed(
+            title="🔨 User Banned",
+            description=f"**{user}** banned επιτυχώς",
+            color=discord.Color.red()
+        )
+        embed.add_field(name="Λόγος", value=reason, inline=False)
+        embed.add_field(name="Από", value=interaction.user.mention, inline=True)
+        await interaction.response.send_message(embed=embed)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Σφάλμα ban: {e}", ephemeral=True)
+
+# Music Player Controls με Buttons
+class MusicControlView(discord.ui.View):
+    def __init__(self, voice_client, player):
+        super().__init__(timeout=300)  # 5 λεπτά timeout
+        self.voice_client = voice_client
+        self.player = player
+        self.is_paused = False
+
+    @discord.ui.button(label='⏸️ Stop', style=discord.ButtonStyle.red, custom_id='stop')
+    async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.voice_client and self.voice_client.is_playing():
+            self.voice_client.stop()
+            await interaction.response.send_message("⏹️ Μουσική σταμάτησε!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Δεν παίζει μουσική!", ephemeral=True)
+
+    @discord.ui.button(label='▶️ Start/Pause', style=discord.ButtonStyle.green, custom_id='start_pause')
+    async def start_pause_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.voice_client:
+            if self.voice_client.is_playing():
+                self.voice_client.pause()
+                self.is_paused = True
+                button.label = '▶️ Resume'
+                await interaction.response.edit_message(view=self)
+                await interaction.followup.send("⏸️ Μουσική σε παύση!", ephemeral=True)
+            elif self.voice_client.is_paused():
+                self.voice_client.resume()
+                self.is_paused = False
+                button.label = '⏸️ Pause'
+                await interaction.response.edit_message(view=self)
+                await interaction.followup.send("▶️ Μουσική συνεχίζει!", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ Δεν παίζει μουσική!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Δεν είμαι συνδεδεμένος!", ephemeral=True)
+
+    @discord.ui.button(label='🔊 Φωνή', style=discord.ButtonStyle.blurple, custom_id='volume')
+    async def volume_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.voice_client and hasattr(self.voice_client.source, 'volume'):
+            current_volume = self.voice_client.source.volume * 100
+            await interaction.response.send_message(f"🔊 Τρέχουσα ένταση: {current_volume:.0f}%\nΧρησιμοποιήστε `/volume [0-100]` για αλλαγή!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Δεν μπορώ να ελέγξω την ένταση αυτή τη στιγμή!", ephemeral=True)
+
+    @discord.ui.button(label='📜 Info', style=discord.ButtonStyle.gray, custom_id='info')
+    async def info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.player and hasattr(self.player, 'title'):
+            embed = discord.Embed(
+                title="🎵 Τώρα Παίζει",
+                description=f"**{self.player.title}**",
+                color=discord.Color.blue()
+            )
+            if hasattr(self.player, 'webpage_url'):
+                embed.add_field(name="🔗 Link", value=self.player.webpage_url, inline=False)
+            if hasattr(self.player, 'thumbnail'):
+                embed.set_thumbnail(url=self.player.thumbnail)
+            
+            embed.add_field(name="🎛️ Controls", value="Χρησιμοποιήστε τα buttons για έλεγχο!", inline=False)
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Δεν βρέθηκαν πληροφορίες!", ephemeral=True)
+
+@tree.command(name="play", description="Παίξε μουσική από URL ή όνομα με πλήρη controls (όλοι).")
+@app_commands.describe(url="URL ή όνομα τραγουδιού")
+async def play(interaction: discord.Interaction, url: str):
+    # Όλοι μπορούν να χρησιμοποιήσουν το /play
+    if not interaction.user.voice or not interaction.user.voice.channel:
+        await interaction.response.send_message("❌ Πρέπει να είσαι σε φωνητικό κανάλι για να παίξεις μουσική.", ephemeral=True)
+        return
+
+    channel = interaction.user.voice.channel  
+    voice_client = interaction.guild.voice_client  
+
+    # Defer response για να έχουμε χρόνο για processing
+    await interaction.response.defer()
+
+    if not voice_client:  
+        voice_client = await channel.connect()  
+    elif voice_client.channel != channel:  
+        await voice_client.move_to(channel)  
+
+    try:
+        # Καλύτερες ρυθμίσεις ήχου
+        player = await YTDLSource.from_url(url, loop=bot.loop, stream=True)
+        
+        if voice_client.is_playing():  
+            voice_client.stop()  
+        
+        # Παίξιμο με καλύτερη ποιότητα
+        voice_client.play(player, after=lambda e: logger.error(f'Player error: {e}') if e else None)
+        
+        # Δημιουργία embed με πληροφορίες
+        embed = discord.Embed(
+            title="🎵 Τώρα Παίζει",
+            description=f"**{player.title}**",
+            color=discord.Color.green()
+        )
+        
+        if hasattr(player, 'webpage_url') and player.webpage_url:
+            embed.add_field(name="🔗 Link", value=f"[Άνοιγμα στο YouTube]({player.webpage_url})", inline=True)
+        
+        embed.add_field(name="🎛️ Controls", value="Χρησιμοποιήστε τα buttons παρακάτω!", inline=False)
+        embed.set_footer(text="🎧 Απολαύστε τη μουσική!")
+        
+        if hasattr(player, 'thumbnail') and player.thumbnail:
+            embed.set_thumbnail(url=player.thumbnail)
+        
+        # Δημιουργία control view
+        view = MusicControlView(voice_client, player)
+        
+        await interaction.followup.send(embed=embed, view=view)
+        
+    except Exception as e:
+        logger.error(f"Music play error: {e}")
+        await interaction.followup.send(f"❌ Σφάλμα στη μουσική: {str(e)}", ephemeral=True)
+
+@tree.command(name="volume", description="Άλλαξε την ένταση της μουσικής (0-100).")
+@app_commands.describe(volume="Ένταση από 0 έως 100")
+async def volume(interaction: discord.Interaction, volume: int):
+    if not interaction.guild.voice_client:
+        await interaction.response.send_message("❌ Δεν είμαι συνδεδεμένος σε φωνητικό κανάλι!", ephemeral=True)
+        return
+    
+    if not 0 <= volume <= 100:
+        await interaction.response.send_message("❌ Η ένταση πρέπει να είναι μεταξύ 0 και 100!", ephemeral=True)
+        return
+    
+    voice_client = interaction.guild.voice_client
+    if voice_client.source and hasattr(voice_client.source, 'volume'):
+        voice_client.source.volume = volume / 100.0
+        await interaction.response.send_message(f"🔊 Ένταση ρυθμίστηκε στο {volume}%!", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ Δεν μπορώ να ρυθμίσω την ένταση αυτή τη στιγμή!", ephemeral=True)
+
+@tree.command(name="disconnect", description="Αποσυνδέσου από το φωνητικό κανάλι.")
+async def disconnect(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+    if voice_client:
+        await voice_client.disconnect()
+        await interaction.response.send_message("⏹️ Αποσυνδέθηκε.", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ Δεν είμαι συνδεδεμένος σε φωνητικό κανάλι.", ephemeral=True)
+
+# Επιπλέον εντολές για debugging και status
+
+@bot.command(name='ping')
+async def ping(ctx):
+    """Ping command to check bot latency"""
+    latency = round(bot.latency * 1000)
+    embed = discord.Embed(
+        title="🏓 Pong!",
+        description=f"Καθυστέρηση: {latency}ms",
+        color=discord.Color.green()
+    )
+    await ctx.send(embed=embed)
+
+@bot.command(name='info')
+async def info(ctx):
+    """Bot information command"""
+    embed = discord.Embed(
+        title="🤖 Bot Information",
+        color=discord.Color.blue(),
+        timestamp=datetime.utcnow()
+    )
+    embed.add_field(name="📊 Servers", value=len(bot.guilds), inline=True)
+    embed.add_field(name="👥 Users", value=len(bot.users), inline=True)
+    embed.add_field(name="⚡ Latency", value=f"{round(bot.latency * 1000)}ms", inline=True)
+    embed.add_field(name="🏠 Hosting", value="Replit 24/7", inline=True)
+    embed.add_field(name="🐍 Python", value="discord.py", inline=True)
+    if bot.user:
+        embed.add_field(name="📅 Created", value=bot.user.created_at.strftime("%d/%m/%Y"), inline=True)
+    embed.set_footer(text="Powered by Replit")
+    await ctx.send(embed=embed)
+
+@bot.command(name='status')
+async def status(ctx):
+    """Check bot status"""
+    if bot.user:
+        uptime_seconds = (datetime.utcnow() - bot.user.created_at).total_seconds()
+        hours = int(uptime_seconds // 3600)
+        minutes = int((uptime_seconds % 3600) // 60)
+    else:
+        hours = minutes = 0
+    
+    embed = discord.Embed(
+        title="📊 Bot Status",
+        color=discord.Color.green(),
+        timestamp=datetime.utcnow()
+    )
+    embed.add_field(name="🟢 Status", value="Online & Running", inline=True)
+    embed.add_field(name="⏱️ Session Time", value=f"{hours}h {minutes}m", inline=True)
+    embed.add_field(name="🔗 Keep-Alive", value="Active", inline=True)
+    await ctx.send(embed=embed)
+
+# Error handling
+@bot.event
+async def on_command_error(ctx, error):
+    """Global error handler for commands"""
+    if isinstance(error, commands.CommandNotFound):
+        await ctx.send("❌ Άγνωστη εντολή! Χρησιμοποιήστε `!help` για λίστα εντολών.")
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(f"❌ Λείπει παράμετρος! Χρησιμοποιήστε `!help {ctx.command}` για περισσότερες πληροφορίες.")
+    elif isinstance(error, commands.CommandOnCooldown):
+        await ctx.send(f"⏰ Περιμένετε {error.retry_after:.1f} δευτερόλεπτα πριν χρησιμοποιήσετε ξανά αυτή την εντολή.")
+    else:
+        logger.error(f"Command error: {error}")
+        await ctx.send("❌ Προέκυψε σφάλμα κατά την εκτέλεση της εντολής.")
+
+@bot.event
+async def on_guild_join(guild):
+    """Event when bot joins a new guild"""
+    logger.info(f"Joined guild: {guild.name} (ID: {guild.id})")
+    
+    # Try to send a welcome message
+    if guild.system_channel:
+        embed = discord.Embed(
+            title="👋 Γεια σας!",
+            description="Ευχαριστώ που με προσθέσατε στον server σας!\nΧρησιμοποιήστε `/help` για slash commands ή `!help` για text commands.",
+            color=discord.Color.green()
+        )
+        try:
+            await guild.system_channel.send(embed=embed)
+        except:
+            logger.warning(f"Could not send welcome message to {guild.name}")
+
+def run_bot():
+    """Main function to run the bot"""
+    # Get Discord token from environment variables
+    token = os.getenv('DISCORD_TOKEN')
+    
+    if not token:
+        logger.error("❌ DISCORD_TOKEN not found in environment variables!")
+        logger.error("Please add your Discord bot token to the Secrets tab in Replit")
+        return
+    
+    try:
+        logger.info("Starting Discord bot...")
+        bot.run(token, log_handler=None)  # We handle logging ourselves
+    except discord.LoginFailure:
+        logger.error("❌ Invalid Discord token! Please check your DISCORD_TOKEN in Secrets.")
+    except discord.HTTPException as e:
+        logger.error(f"❌ HTTP error occurred: {e}")
+    except Exception as e:
+        logger.error(f"❌ Unexpected error: {e}")
+        # Auto-restart mechanism
+        logger.info("Attempting to restart bot in 30 seconds...")
+        import time
+        time.sleep(30)
+        run_bot()
