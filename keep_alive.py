@@ -99,15 +99,20 @@ STATUS_TEMPLATE = """
 @app.route('/')
 def index():
     """Main status page"""
-    # Χρησιμοποιούμε το σωστό Replit dev domain
-    dev_domain = os.getenv('REPLIT_DEV_DOMAIN', '')
-    if dev_domain:
-        ping_url = f"https://{dev_domain}"
+    # Check if running on Railway
+    railway_url = os.getenv('RAILWAY_PUBLIC_DOMAIN', '')
+    if railway_url:
+        ping_url = f"https://{railway_url}"
     else:
-        # Fallback στο παλιό format
-        ping_url = os.getenv('REPL_SLUG', 'workspace') + '.' + os.getenv('REPL_OWNER', 'konstantinoudem') + '.repl.co'
-        if not ping_url.startswith('http'):
-            ping_url = f"https://{ping_url}"
+        # Fallback to Replit dev domain
+        dev_domain = os.getenv('REPLIT_DEV_DOMAIN', '')
+        if dev_domain:
+            ping_url = f"https://{dev_domain}"
+        else:
+            # Final fallback στο παλιό format
+            ping_url = os.getenv('REPL_SLUG', 'workspace') + '.' + os.getenv('REPL_OWNER', 'konstantinoudem') + '.repl.co'
+            if not ping_url.startswith('http'):
+                ping_url = f"https://{ping_url}"
     
     return render_template_string(STATUS_TEMPLATE, 
                                 timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S UTC'),
@@ -135,8 +140,10 @@ def health():
 def run():
     """Run the Flask server"""
     try:
-        # Bind to 0.0.0.0:5000 as required
-        app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+        # Use Railway's PORT environment variable if available, otherwise default to 5000
+        port = int(os.getenv('PORT', 5000))
+        # Bind to 0.0.0.0 for Railway/Replit compatibility
+        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
     except Exception as e:
         logger.error(f"Error starting Flask server: {e}")
 
@@ -145,7 +152,8 @@ def keep_alive():
     try:
         server_thread = threading.Thread(target=run, daemon=True)
         server_thread.start()
-        logger.info("Keep-alive server started successfully on port 5000")
+        port = int(os.getenv('PORT', 5000))
+        logger.info(f"Keep-alive server started successfully on port {port}")
         return server_thread
     except Exception as e:
         logger.error(f"Failed to start keep-alive server: {e}")

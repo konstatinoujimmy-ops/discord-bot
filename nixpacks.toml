@@ -1,0 +1,5 @@
+# Nixpacks configuration for Railway deployment
+# Includes ffmpeg for yt-dlp audio functionality
+
+[phases.setup]
+nixPkgs = ["ffmpeg"]

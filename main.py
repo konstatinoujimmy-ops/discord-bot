@@ -34,9 +34,12 @@ def main():
         # Small delay to ensure Flask server starts
         time.sleep(2)
         
-        # Start auto-ping system για 24/7 uptime
-        logger.info("Starting auto-ping system...")
-        start_auto_ping()
+        # Start auto-ping system μόνο στο Replit για 24/7 uptime
+        if os.getenv('REPLIT_DEV_DOMAIN') or os.getenv('REPL_SLUG'):
+            logger.info("Starting auto-ping system (Replit detected)...")
+            start_auto_ping()
+        else:
+            logger.info("Skipping auto-ping system (Railway/Production environment detected)")
         
         # Start the Discord bot
         logger.info("Starting Discord bot...")
