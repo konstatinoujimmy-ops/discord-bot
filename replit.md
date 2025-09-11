@@ -6,7 +6,16 @@ This is a 24/7 Discord bot designed to run continuously on Replit using free kee
 
 Preferred communication style: Simple, everyday language.
 
-## Recent Changes (August 13, 2025)
+## Recent Changes (September 11, 2025)
+- **RAILWAY INTEGRATION READY**: Added complete Railway deployment configuration
+- Created requirements.txt, railway.toml, Procfile, and nixpacks.toml for seamless Railway deployment
+- Modified keep_alive.py to support Railway's PORT environment variable and RAILWAY_PUBLIC_DOMAIN
+- Updated main.py to disable auto-ping on Railway (not needed for 24/7 hosting there)
+- Added comprehensive RAILWAY_DEPLOYMENT_GUIDE.md with step-by-step instructions
+- Railway deployment preserves all bot functionality while providing true 24/7 uptime
+- Bot remains compatible with both Replit and Railway environments
+
+## Previous Changes (August 13, 2025)
 - Successfully integrated user's existing Discord bot code with 24/7 keep-alive system
 - Preserved all original slash commands: /dm, /dm2, /mute, /announce, /play, /disconnect, /permissions
 - Added yt-dlp dependency for music functionality
@@ -67,5 +76,7 @@ Preferred communication style: Simple, everyday language.
 - **Cron-Job.org**: Alternative monitoring service option
 - **Replit Secrets**: Environment variable management for secure token storage
 
-## Deployment Platform
-- **Replit**: Cloud-based development and hosting platform with built-in environment variable management and automatic HTTPS endpoints
+## Deployment Platforms
+- **Replit**: Cloud-based development platform with built-in environment variable management and keep-alive mechanisms
+- **Railway**: Production-ready hosting platform for true 24/7 deployment without sleep limitations
+- **Dual Compatibility**: Bot works seamlessly on both platforms with environment auto-detection
