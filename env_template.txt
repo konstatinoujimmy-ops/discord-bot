@@ -1,0 +1,4 @@
+# Discord Bot Environment Variables για Bot-Hosting.net
+# Αντιγράφεις αυτό σε .env αρχείο
+
+DISCORD_TOKEN=το_discord_token_σου_εδώ
