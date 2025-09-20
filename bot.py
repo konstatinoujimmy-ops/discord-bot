@@ -870,6 +870,81 @@ async def disconnect(interaction: discord.Interaction):
     else:
         await interaction.response.send_message("❌ Δεν είμαι συνδεδεμένος σε φωνητικό κανάλι.", ephemeral=True)
 
+@tree.command(name="move_all", description="Μετακίνησε όλα τα μέλη στο voice channel σου (Owner & Head Admins μόνο)")
+async def move_all(interaction: discord.Interaction):
+    """Μετακινεί όλα τα μέλη από άλλα voice channels στο voice channel του χρήστη"""
+    
+    # Έλεγχος permissions - μόνο owner και head admins
+    if not is_staff_or_owner(interaction.user):
+        await interaction.response.send_message("❌ Μόνο ο owner και οι head admins μπορούν να χρησιμοποιήσουν αυτή την εντολή!", ephemeral=True)
+        return
+    
+    # Έλεγχος αν ο χρήστης είναι σε voice channel
+    if not interaction.user.voice or not interaction.user.voice.channel:
+        await interaction.response.send_message("❌ Πρέπει να είσαι σε φωνητικό κανάλι για να μετακινήσεις τα μέλη!", ephemeral=True)
+        return
+    
+    target_channel = interaction.user.voice.channel
+    moved_count = 0
+    failed_moves = []
+    
+    # Defer την απάντηση για να έχουμε χρόνο να κάνουμε τα moves
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        # Παίρνουμε όλα τα voice channels του server
+        for voice_channel in interaction.guild.voice_channels:
+            if voice_channel == target_channel:
+                continue  # Skip το target channel
+            
+            # Κάνουμε copy τη λίστα για να αποφύγουμε errors κατά το iteration
+            members_to_move = list(voice_channel.members)
+            
+            for member in members_to_move:
+                try:
+                    await member.move_to(target_channel)
+                    moved_count += 1
+                    # Μικρή παύση για να μην κάνουμε rate limit
+                    await asyncio.sleep(0.2)
+                except discord.HTTPException as e:
+                    failed_moves.append(member.display_name)
+                    logger.warning(f"Failed to move {member.display_name}: {e}")
+                except Exception as e:
+                    failed_moves.append(member.display_name)
+                    logger.error(f"Error moving {member.display_name}: {e}")
+        
+        # Δημιουργία μηνύματος αποτελεσμάτων
+        if moved_count > 0:
+            success_msg = f"✅ **Move All Ολοκληρώθηκε!**\n"
+            success_msg += f"🎯 **Μετακινήθηκαν:** {moved_count} μέλη στο {target_channel.name}\n"
+            success_msg += f"👤 **Από:** {interaction.user.display_name}"
+            
+            if failed_moves:
+                success_msg += f"\n⚠️ **Αποτυχίες:** {len(failed_moves)} μέλη δεν μπόρεσαν να μετακινηθούν"
+                if len(failed_moves) <= 5:  # Δείχνουμε τα ονόματα μόνο αν είναι λίγα
+                    success_msg += f"\n({', '.join(failed_moves)})"
+            
+            # Embed για το αποτέλεσμα
+            embed = discord.Embed(
+                title="🚀 Move All Command",
+                description=success_msg,
+                color=discord.Color.green(),
+                timestamp=datetime.utcnow()
+            )
+            embed.set_footer(text=f"Executed by {interaction.user.display_name}")
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            
+            # Log για security tracking
+            logger.info(f"MOVE_ALL executed by {interaction.user.display_name} ({interaction.user.id}): moved {moved_count} members to {target_channel.name}")
+            
+        else:
+            await interaction.followup.send("ℹ️ Δεν υπήρχαν μέλη σε άλλα voice channels για μετακίνηση.", ephemeral=True)
+            
+    except Exception as e:
+        logger.error(f"Critical error in move_all command: {e}")
+        await interaction.followup.send(f"❌ Σφάλμα κατά τη μετακίνηση μελών: {str(e)}", ephemeral=True)
+
 # Επιπλέον εντολές για debugging και status
 
 @bot.command(name='ping')
