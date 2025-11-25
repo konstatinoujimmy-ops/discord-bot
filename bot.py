@@ -36,6 +36,7 @@ if not discord.opus.is_loaded():
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
+intents.voice_states = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
