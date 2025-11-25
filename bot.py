@@ -1,5 +1,5 @@
 """
-Discord Bot Implementation με 24/7 Keep-Alive
+Discord Bot Implementation με Ultra Premium Audio System
 Περιέχει όλες τις εντολές και event handlers του bot
 """
 
@@ -11,13 +11,16 @@ import os
 import yt_dlp
 import logging
 import io
+import random
 from datetime import datetime, timedelta
-from collections import defaultdict
+from collections import defaultdict, deque
 
-# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-# Opus loading για audio support
 if not discord.opus.is_loaded():
     try:
         discord.opus.load_opus('opus')
@@ -30,7 +33,6 @@ if not discord.opus.is_loaded():
             except OSError:
                 logger.warning("Warning: Could not load Opus library - μουσική ίσως να μην δουλέψει")
 
-# Bot configuration
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -38,7 +40,6 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 tree = bot.tree
 
-# Configuration από τον αρχικό κώδικα
 STAFF_ROLE_IDS = {
     1250890557279178864,
     1293607647223746661,
@@ -47,62 +48,223 @@ STAFF_ROLE_IDS = {
 OWNER_ID = 839148474314129419
 
 active_mutes = {}
-dm2_sent_count = 0  # Μετρητής για τα DM του /dm2
+dm2_sent_count = 0
 
-# Security monitoring system
 security_tracker = {
     'channel_creations': defaultdict(list),
     'everyone_mentions': defaultdict(list),
     'bans': defaultdict(list),
     'kicks': defaultdict(list),
     'timeouts': defaultdict(list),
-    'role_removals': {}  # user_id: removal_time
+    'role_removals': {}
 }
 
-# ULTRA PREMIUM AUDIO - Η απόλυτη καλύτερη ποιότητα για Discord
+active_giveaways = {}
+
+def parse_duration(duration_str: str) -> int:
+    """
+    Parse duration string to minutes.
+    Accepts: '5m', '2h', '1d', or plain numbers like '60'
+    Returns: duration in minutes
+    """
+    duration_str = duration_str.strip().lower()
+    
+    if duration_str.endswith('m'):
+        return int(duration_str[:-1])
+    elif duration_str.endswith('h'):
+        hours = int(duration_str[:-1])
+        return hours * 60
+    elif duration_str.endswith('d'):
+        days = int(duration_str[:-1])
+        return days * 24 * 60
+    else:
+        return int(duration_str)
+
 ytdl_format_options = {
-    'format': 'bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a][acodec=aac]/bestaudio[abr>=128]/bestaudio/best',
+    'format': 'bestaudio/best',
     'quiet': True,
     'no_warnings': True,
     'default_search': 'ytsearch',
     'source_address': '0.0.0.0',
     'extractaudio': True,
     'audioformat': 'opus',
-    'audioquality': '0',  # Καλύτερη ποιότητα (0 = best)
+    'audioquality': 0,
     'prefer_ffmpeg': True,
     'ignoreerrors': False,
-    'writesubtitles': False,
-    'writeautomaticsub': False,
+    'nocheckcertificate': True,
+    'no_color': True,
 }
 
-# PREMIUM ΠΟΙΟΤΗΤΑ - Η καλύτερη δυνατή για Discord
 ffmpeg_options = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
-    'options': '-vn -filter:a "volume=0.8,dynaudnorm=f=150:g=15" -ar 48000 -ac 2 -b:a 128k'
+    'options': '-vn -b:a 192k -ar 48000 -ac 2 -filter:a "dynaudnorm=f=150:g=15"'
 }
 
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
 
+class MusicQueue:
+    def __init__(self):
+        self.queue = deque()
+        self.current = None
+        self.loop = False
+        self.loop_queue = False
+        
+    def add(self, song):
+        self.queue.append(song)
+    
+    def next(self):
+        if self.loop and self.current:
+            return self.current
+        if self.loop_queue and self.current:
+            self.queue.append(self.current)
+        if self.queue:
+            self.current = self.queue.popleft()
+            return self.current
+        self.current = None
+        return None
+    
+    def skip(self):
+        if self.queue:
+            self.current = self.queue.popleft()
+            return self.current
+        self.current = None
+        return None
+    
+    def clear(self):
+        self.queue.clear()
+        self.current = None
+    
+    def shuffle(self):
+        temp_list = list(self.queue)
+        random.shuffle(temp_list)
+        self.queue = deque(temp_list)
+    
+    def is_empty(self):
+        return len(self.queue) == 0
+    
+    def size(self):
+        return len(self.queue)
+
+music_queues = {}
+
 class YTDLSource(discord.PCMVolumeTransformer):
-    def __init__(self, source, *, data, volume=0.8):  # Βέλτιστο volume για καθαρό ήχο
+    def __init__(self, source, *, data, volume=0.8):
         super().__init__(source, volume)
         self.data = data
         self.title = data.get('title')
         self.thumbnail = data.get('thumbnail')
         self.webpage_url = data.get('webpage_url')
+        self.duration = data.get('duration')
+        self.uploader = data.get('uploader')
 
-    @classmethod  
-    async def from_url(cls, url, *, loop=None, stream=True):  
-        loop = loop or asyncio.get_event_loop()  
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))  
-        if 'entries' in data:  
-            data = data['entries'][0]  
-        filename = data['url'] if stream else ytdl.prepare_filename(data)  
-        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+    @classmethod
+    async def from_url(cls, url, *, loop=None, stream=True):
+        loop = loop or asyncio.get_event_loop()
+        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        if 'entries' in data:
+            data = data['entries'][0]
+        filename = data['url'] if stream else ytdl.prepare_filename(data)
+        
+        return cls(discord.FFmpegOpusAudio(filename, **ffmpeg_options), data=data)
+
+class GiveawayView(discord.ui.View):
+    def __init__(self, giveaway_id):
+        super().__init__(timeout=None)
+        self.giveaway_id = giveaway_id
+
+    @discord.ui.button(label='🎟️ Enter', style=discord.ButtonStyle.green, custom_id='giveaway_enter')
+    async def enter_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.giveaway_id not in active_giveaways:
+            await interaction.response.send_message("❌ Αυτό το giveaway δεν είναι πια ενεργό!", ephemeral=True)
+            return
+        
+        giveaway = active_giveaways[self.giveaway_id]
+        
+        if interaction.user.id in giveaway['participants']:
+            await interaction.response.send_message("⚠️ Έχεις ήδη μπει στο giveaway!", ephemeral=True)
+            return
+        
+        giveaway['participants'].append(interaction.user.id)
+        await interaction.response.send_message("✅ Μπήκες επιτυχώς στο giveaway! Καλή τύχη! 🍀", ephemeral=True)
+        
+        logger.info(f"{interaction.user} entered giveaway {self.giveaway_id}")
+
+    @discord.ui.button(label='View Giveaway', style=discord.ButtonStyle.gray, custom_id='giveaway_view')
+    async def view_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.giveaway_id not in active_giveaways:
+            await interaction.response.send_message("❌ Αυτό το giveaway δεν είναι πια ενεργό!", ephemeral=True)
+            return
+        
+        giveaway = active_giveaways[self.giveaway_id]
+        participant_count = len(giveaway['participants'])
+        
+        embed = discord.Embed(
+            title=f"🎉 {giveaway['prize']}",
+            description=f"**Συμμετέχοντες:** {participant_count}",
+            color=discord.Color.blue()
+        )
+        
+        if participant_count > 0:
+            participant_list = []
+            for user_id in giveaway['participants'][:10]:
+                user = bot.get_user(user_id)
+                if user:
+                    participant_list.append(f"• {user.mention}")
+            
+            embed.add_field(
+                name=f"👥 Πρώτοι {min(10, participant_count)} Συμμετέχοντες",
+                value="\n".join(participant_list) if participant_list else "Κανένας ακόμα",
+                inline=False
+            )
+            
+            if participant_count > 10:
+                embed.add_field(
+                    name="➕ Περισσότεροι",
+                    value=f"και {participant_count - 10} ακόμα...",
+                    inline=False
+                )
+        
+        time_left = giveaway['end_time'] - datetime.now()
+        minutes_left = int(time_left.total_seconds() / 60)
+        embed.add_field(name="⏱️ Χρόνος που απομένει", value=f"{minutes_left} λεπτά", inline=True)
+        embed.add_field(name="🏆 Νικητές", value=giveaway['winners'], inline=True)
+        
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label='❌ Cancel', style=discord.ButtonStyle.red, custom_id='giveaway_cancel')
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("❌ Μόνο ο owner μπορεί να ακυρώσει το giveaway!", ephemeral=True)
+            return
+        
+        if self.giveaway_id not in active_giveaways:
+            await interaction.response.send_message("❌ Αυτό το giveaway δεν είναι πια ενεργό!", ephemeral=True)
+            return
+        
+        giveaway = active_giveaways[self.giveaway_id]
+        prize_name = giveaway['prize']
+        channel = bot.get_channel(giveaway['channel_id'])
+        
+        del active_giveaways[self.giveaway_id]
+        
+        cancel_embed = discord.Embed(
+            title="🚫 Giveaway Cancelled",
+            description=f"**{prize_name}**\n\nΤο giveaway ακυρώθηκε από τον host.",
+            color=discord.Color.red()
+        )
+        
+        try:
+            if channel:
+                await channel.send(embed=cancel_embed)
+            await interaction.message.delete()
+        except:
+            pass
+        
+        await interaction.response.send_message(f"🚫 Το giveaway **{prize_name}** ακυρώθηκε επιτυχώς!", ephemeral=True)
+        logger.info(f"Giveaway {self.giveaway_id} cancelled by owner")
 
 @bot.event
 async def on_ready():
-    """Event triggered when bot is ready"""
     try:
         synced = await tree.sync()
         logger.info(f"✅ Synced {len(synced)} slash commands")
@@ -113,23 +275,18 @@ async def on_ready():
     logger.info(f'Bot ID: {bot.user.id if bot.user else "Unknown"}')
     logger.info(f'Guilds: {len(bot.guilds)}')
     
-    # Set bot status
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching, 
-            name="🛡️ Security Monitor 24/7"
+            name="🎵 Ultra Premium Music | 🛡️ Security 24/7"
         )
     )
     
-    # Start security cleanup task
     cleanup_security_logs.start()
-    
-    # Start heartbeat ping for extra reliability
-    heartbeat_ping.start()
+    update_giveaway_timers.start()
 
 @bot.event
 async def on_command_error(ctx, error):
-    """Handle command errors"""
     logger.error(f"Command error: {error}")
     if isinstance(error, commands.CommandNotFound):
         return
@@ -137,22 +294,17 @@ async def on_command_error(ctx, error):
 
 @bot.event
 async def on_app_command_error(interaction: discord.Interaction, error: discord.app_commands.AppCommandError):
-    """Handle slash command errors"""
     logger.error(f"Slash command error: {error}")
     if interaction.response.is_done():
         await interaction.followup.send(f"❌ Σφάλμα: {error}", ephemeral=True)
     else:
         await interaction.response.send_message(f"❌ Σφάλμα: {error}", ephemeral=True)
 
-# SECURITY EVENT HANDLERS
-
 @bot.event
 async def on_guild_channel_create(channel):
-    """Παρακολουθεί τη δημιουργία νέων channels"""
     if hasattr(channel, 'guild') and channel.guild:
         async for entry in channel.guild.audit_logs(action=discord.AuditLogAction.channel_create, limit=1):
             if entry.user and entry.user.id != OWNER_ID:
-                # Έλεγχος rate limit για δημιουργία channels (3+ σε 10 λεπτά)
                 if await check_rate_limit(entry.user.id, 'channel_creations', 2, 10):
                     member = channel.guild.get_member(entry.user.id)
                     if member:
@@ -164,13 +316,10 @@ async def on_guild_channel_create(channel):
 
 @bot.event
 async def on_message(message):
-    """Παρακολουθεί μηνύματα για @everyone/@here mentions"""
     if message.author.id == OWNER_ID or message.author.bot:
         return
     
-    # Έλεγχος για @everyone ή @here mentions
     if message.mention_everyone or '@everyone' in message.content or '@here' in message.content:
-        # Έλεγχος rate limit (2+ mentions)
         if await check_rate_limit(message.author.id, 'everyone_mentions', 1, 60):
             await remove_all_roles_except_everyone(
                 message.author,
@@ -181,10 +330,8 @@ async def on_message(message):
 
 @bot.event
 async def on_member_ban(guild, user):
-    """Παρακολουθεί bans"""
     async for entry in guild.audit_logs(action=discord.AuditLogAction.ban, limit=1):
         if entry.user and entry.user.id != OWNER_ID:
-            # Έλεγχος rate limit για bans (5+ bans)
             if await check_rate_limit(entry.user.id, 'bans', 4, 60):
                 member = guild.get_member(entry.user.id)
                 if member:
@@ -196,11 +343,9 @@ async def on_member_ban(guild, user):
 
 @bot.event
 async def on_member_remove(member):
-    """Παρακολουθεί kicks"""
     if member.guild:
         async for entry in member.guild.audit_logs(action=discord.AuditLogAction.kick, limit=1):
             if entry.user and entry.user.id != OWNER_ID and entry.target.id == member.id:
-                # Έλεγχος rate limit για kicks (11+ kicks)
                 if await check_rate_limit(entry.user.id, 'kicks', 10, 60):
                     perpetrator = member.guild.get_member(entry.user.id)
                     if perpetrator:
@@ -212,15 +357,11 @@ async def on_member_remove(member):
 
 @bot.event
 async def on_member_update(before, after):
-    """Παρακολουθεί timeouts"""
-    # Έλεγχος αν ο χρήστης έλαβε timeout
     if before.timed_out_until is None and after.timed_out_until is not None:
         async for entry in after.guild.audit_logs(action=discord.AuditLogAction.member_update, limit=1):
             if (entry.user and entry.user.id != OWNER_ID and 
-                entry.target.id == after.id and 
-                hasattr(entry.changes, 'timed_out_until')):
+                entry.target.id == after.id):
                 
-                # Έλεγχος rate limit για timeouts (11+ timeouts)
                 if await check_rate_limit(entry.user.id, 'timeouts', 10, 60):
                     perpetrator = after.guild.get_member(entry.user.id)
                     if perpetrator:
@@ -229,24 +370,48 @@ async def on_member_update(before, after):
                             f"Excessive timeouts (11+ timeouts in 1 hour)"
                         )
             break
+    
+    if before.roles == after.roles:
+        return
+    
+    if after.id == OWNER_ID:
+        return
+    
+    added_roles = set(after.roles) - set(before.roles)
+    
+    for role in added_roles:
+        role_perms = role.permissions
+        if role_perms.ban_members or role_perms.administrator:
+            try:
+                await after.remove_roles(role, reason="Απαγορευμένα ban permissions - μόνο owner")
+                logger.warning(f"🚫 BLOCKED: Αφαίρεσα ρόλο {role.name} από {after.mention} - ban permissions!")
+                
+                owner = bot.get_user(OWNER_ID)
+                if owner:
+                    embed = discord.Embed(
+                        title="🚫 SECURITY ALERT: Ban Permission Blocked",
+                        description=f"Αφαίρεσα ρόλο **{role.name}** από {after.mention}",
+                        color=discord.Color.red()
+                    )
+                    embed.add_field(name="Λόγος", value="Ρόλος με ban permissions - μόνο εσύ μπορείς να τον δώσεις", inline=False)
+                    embed.add_field(name="Χρόνος", value=f"<t:{int(datetime.utcnow().timestamp())}:F>", inline=False)
+                    await owner.send(embed=embed)
+                    
+            except discord.Forbidden:
+                logger.error(f"❌ Δεν μπόρεσα να αφαιρέσω ρόλο {role.name} από {after.mention}")
 
 def is_staff_or_owner(member: discord.Member) -> bool:
-    """Έλεγχος αν ο χρήστης είναι staff ή owner"""
     return member.id == OWNER_ID or any(role.id in STAFF_ROLE_IDS for role in member.roles)
 
 async def remove_all_roles_except_everyone(member: discord.Member, reason: str):
-    """Αφαιρεί όλα τα roles από έναν χρήστη εκτός του @everyone"""
     try:
-        # Αφαιρούμε όλα τα roles εκτός του @everyone
         roles_to_remove = [role for role in member.roles if role.name != "@everyone"]
         if roles_to_remove:
             await member.remove_roles(*roles_to_remove, reason=f"🛡️ Security violation: {reason}")
             
-            # Αποθηκεύουμε την ώρα αφαίρεσης για τα @everyone/@here mentions (10 ώρες)
             if "everyone/here mentions" in reason:
                 security_tracker['role_removals'][member.id] = datetime.now() + timedelta(hours=10)
             
-            # Ειδοποίηση στον owner
             owner = bot.get_user(OWNER_ID)
             if owner:
                 embed = discord.Embed(
@@ -266,34 +431,11 @@ async def remove_all_roles_except_everyone(member: discord.Member, reason: str):
         logger.error(f"Failed to remove roles from {member}: {e}")
         return False
 
-@tasks.loop(minutes=2)
-async def heartbeat_ping():
-    """Κάνει heartbeat ping κάθε 2 λεπτά για extra reliability"""
-    try:
-        import requests
-        import os
-        
-        dev_domain = os.getenv('REPLIT_DEV_DOMAIN', '')
-        if dev_domain:
-            url = f"https://{dev_domain}/ping"
-        else:
-            url = f"https://{os.getenv('REPL_SLUG', 'workspace')}.{os.getenv('REPL_OWNER', 'konstantinoudem')}.repl.co/ping"
-        
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            logger.info("💓 Heartbeat ping successful")
-        else:
-            logger.warning(f"💓 Heartbeat ping status: {response.status_code}")
-    except Exception as e:
-        logger.error(f"💓 Heartbeat ping failed: {e}")
-
 @tasks.loop(hours=1)
 async def cleanup_security_logs():
-    """Καθαρίζει τα παλιά logs ασφαλείας κάθε ώρα"""
     now = datetime.now()
-    cutoff_time = now - timedelta(hours=24)  # Κρατάμε logs για 24 ώρες
+    cutoff_time = now - timedelta(hours=24)
     
-    # Καθαρισμός παλιών entries
     for action_type in ['channel_creations', 'everyone_mentions', 'bans', 'kicks', 'timeouts']:
         for user_id in list(security_tracker[action_type].keys()):
             security_tracker[action_type][user_id] = [
@@ -303,7 +445,6 @@ async def cleanup_security_logs():
             if not security_tracker[action_type][user_id]:
                 del security_tracker[action_type][user_id]
     
-    # Καθαρισμός expired role removals
     expired_users = [
         user_id for user_id, expiry_time in security_tracker['role_removals'].items()
         if now > expiry_time
@@ -312,28 +453,200 @@ async def cleanup_security_logs():
         del security_tracker['role_removals'][user_id]
 
 async def check_rate_limit(user_id: int, action_type: str, limit: int, window_minutes: int = 60) -> bool:
-    """Ελέγχει αν ο χρήστης έχει υπερβεί το όριο για μια ενέργεια"""
     now = datetime.now()
     cutoff_time = now - timedelta(minutes=window_minutes)
     
-    # Καθαρισμός παλιών entries
     security_tracker[action_type][user_id] = [
         timestamp for timestamp in security_tracker[action_type][user_id] 
         if timestamp > cutoff_time
     ]
     
-    # Προσθήκη του τρέχοντος timestamp
     security_tracker[action_type][user_id].append(now)
     
-    # Έλεγχος αν υπερβαίνει το όριο
     return len(security_tracker[action_type][user_id]) > limit
 
-# SECURITY COMMANDS
+@tasks.loop(minutes=1)
+async def update_giveaway_timers():
+    now = datetime.now()
+    finished_giveaways = []
+    
+    for giveaway_id, giveaway in active_giveaways.items():
+        if now >= giveaway['end_time']:
+            finished_giveaways.append(giveaway_id)
+    
+    for giveaway_id in finished_giveaways:
+        await end_giveaway(giveaway_id)
+
+async def end_giveaway(giveaway_id):
+    if giveaway_id not in active_giveaways:
+        return
+    
+    giveaway = active_giveaways[giveaway_id]
+    channel = bot.get_channel(giveaway['channel_id'])
+    
+    if not channel:
+        del active_giveaways[giveaway_id]
+        return
+    
+    participants = giveaway['participants']
+    
+    if giveaway['fixed_winner']:
+        winner_id = giveaway['fixed_winner']
+        logger.info(f"Giveaway {giveaway_id}: Fixed winner selected (hidden) - {winner_id}")
+    elif len(participants) > 0:
+        winner_id = random.choice(participants)
+        logger.info(f"Giveaway {giveaway_id}: Random winner selected - {winner_id}")
+    else:
+        embed = discord.Embed(
+            title="🎉 Giveaway Ended",
+            description=f"**{giveaway['prize']}**\n\n❌ Κανένας δεν συμμετείχε!",
+            color=discord.Color.red()
+        )
+        await channel.send(embed=embed)
+        del active_giveaways[giveaway_id]
+        return
+    
+    winner = bot.get_user(winner_id)
+    
+    embed = discord.Embed(
+        title="🎉 GIVEAWAY ENDED! 🎉",
+        description=f"**{giveaway['prize']}**",
+        color=discord.Color.gold()
+    )
+    embed.add_field(name="🏆 Νικητής", value=winner.mention if winner else "Unknown User", inline=False)
+    embed.add_field(name="👥 Συμμετέχοντες", value=len(participants), inline=True)
+    embed.add_field(name="🎊 Συγχαρητήρια!", value="Ο νικητής θα ειδοποιηθεί!", inline=False)
+    embed.set_footer(text=f"Hosted by {giveaway['host_name']}")
+    
+    await channel.send(content=winner.mention if winner else None, embed=embed)
+    
+    if winner:
+        try:
+            dm_embed = discord.Embed(
+                title="🎊 Συγχαρητήρια! Κέρδισες!",
+                description=f"Κέρδισες το giveaway: **{giveaway['prize']}**!",
+                color=discord.Color.gold()
+            )
+            dm_embed.add_field(name="Server", value=giveaway.get('guild_name', 'Unknown'), inline=False)
+            await winner.send(embed=dm_embed)
+        except:
+            logger.warning(f"Could not DM winner {winner_id}")
+    
+    try:
+        message = await channel.fetch_message(giveaway['message_id'])
+        await message.edit(view=None)
+    except:
+        pass
+    
+    del active_giveaways[giveaway_id]
+    logger.info(f"Giveaway {giveaway_id} ended successfully")
+
+@tree.command(name="giveaway", description="🎁 Δημιούργησε ένα giveaway (Owner μόνο)")
+@app_commands.describe(
+    channel="Κανάλι για το giveaway",
+    winners="Αριθμός νικητών",
+    duration="Διάρκεια (π.χ. 5m, 2h, 1d ή 60 για λεπτά)",
+    prize="Το βραβείο/όνομα του giveaway",
+    fixed_winner="(ΚΡΥΦΟ) Όρισε συγκεκριμένο νικητή - προαιρετικό"
+)
+async def giveaway(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel,
+    winners: int,
+    duration: str,
+    prize: str,
+    fixed_winner: discord.User = None
+):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Μόνο ο owner μπορεί να δημιουργήσει giveaway!", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        duration_minutes = parse_duration(duration)
+    except (ValueError, IndexError):
+        await interaction.followup.send("❌ Άκυρο format διάρκειας! Χρησιμοποίησε: 5m (λεπτά), 2h (ώρες), 1d (ημέρες) ή απλό νούμερο (π.χ. 60)", ephemeral=True)
+        return
+    
+    end_time = datetime.now() + timedelta(minutes=duration_minutes)
+    giveaway_id = f"{channel.id}_{int(datetime.now().timestamp())}"
+    
+    duration_display = duration if any(duration.endswith(x) for x in ['m', 'h', 'd']) else f"{duration} minutes"
+    
+    embed = discord.Embed(
+        title=prize,
+        description=f"Πάτησε **🎟️ Enter** για να μπεις!\n\n**Time Remaining**\nin {duration_display} (<t:{int(end_time.timestamp())}:R>)",
+        color=discord.Color.blue()
+    )
+    embed.add_field(name="Hosted By", value=interaction.user.mention, inline=False)
+    embed.set_image(url="https://i.imgur.com/9n8z5YQ.png")
+    embed.set_footer(text=f"{winners} winner{'s' if winners > 1 else ''} | Ends At")
+    embed.timestamp = end_time
+    
+    view = GiveawayView(giveaway_id)
+    
+    message = await channel.send(embed=embed, view=view)
+    
+    active_giveaways[giveaway_id] = {
+        'channel_id': channel.id,
+        'message_id': message.id,
+        'prize': prize,
+        'winners': winners,
+        'duration': duration_display,
+        'end_time': end_time,
+        'participants': [],
+        'host_id': interaction.user.id,
+        'host_name': interaction.user.display_name,
+        'fixed_winner': fixed_winner.id if fixed_winner else None,
+        'guild_name': interaction.guild.name if interaction.guild else 'Unknown'
+    }
+    
+    confirmation_msg = f"✅ Το giveaway δημιουργήθηκε στο {channel.mention}!\n\n**Prize:** {prize}\n**Duration:** {duration_display}\n**Winners:** {winners}"
+    
+    if fixed_winner:
+        confirmation_msg += f"\n\n🎯 **ΚΡΥΦΟΣ ΝΙΚΗΤΗΣ:** {fixed_winner.mention} (μόνο εσύ το βλέπεις αυτό)"
+    
+    await interaction.followup.send(confirmation_msg, ephemeral=True)
+    
+    logger.info(f"Giveaway created by {interaction.user}: {prize} in {channel.name} for {duration_display}")
+    if fixed_winner:
+        logger.info(f"Fixed winner set: {fixed_winner}")
+
+@tree.command(name="giveaway_add", description="🎁 Πρόσθεσε κάποιον στο giveaway χειροκίνητα (Owner μόνο)")
+@app_commands.describe(
+    message_id="Το ID του μηνύματος του giveaway",
+    user="Ο χρήστης που θα προστεθεί"
+)
+async def giveaway_add(interaction: discord.Interaction, message_id: str, user: discord.User):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Μόνο ο owner!", ephemeral=True)
+        return
+    
+    found_giveaway = None
+    for giveaway_id, giveaway in active_giveaways.items():
+        if str(giveaway['message_id']) == message_id:
+            found_giveaway = giveaway
+            break
+    
+    if not found_giveaway:
+        await interaction.response.send_message("❌ Δεν βρέθηκε ενεργό giveaway με αυτό το message ID!", ephemeral=True)
+        return
+    
+    if user.id in found_giveaway['participants']:
+        await interaction.response.send_message(f"⚠️ Ο {user.mention} έχει ήδη μπει στο giveaway!", ephemeral=True)
+        return
+    
+    found_giveaway['participants'].append(user.id)
+    await interaction.response.send_message(
+        f"✅ Ο {user.mention} προστέθηκε χειροκίνητα στο giveaway!\n**Prize:** {found_giveaway['prize']}\n**Συνολικοί συμμετέχοντες:** {len(found_giveaway['participants'])}",
+        ephemeral=True
+    )
+    
+    logger.info(f"Owner manually added {user} to giveaway: {found_giveaway['prize']}")
 
 @tree.command(name="security_status", description="Εμφανίζει την κατάσταση ασφαλείας του server")
 async def security_status(interaction: discord.Interaction):
-    """Εμφανίζει αναλυτικά stats ασφαλείας"""
-    # Έλεγχος αν είναι owner ή staff
     if not is_staff_or_owner(interaction.user):
         await interaction.response.send_message("❌ Μόνο ο owner και το staff μπορούν να δουν τα security stats!", ephemeral=True)
         return
@@ -344,7 +657,6 @@ async def security_status(interaction: discord.Interaction):
         timestamp=datetime.now()
     )
     
-    # Στατιστικά για κάθε τύπο violation
     for action_type, display_name in [
         ('channel_creations', 'Channel Creations'),
         ('everyone_mentions', '@everyone/@here Mentions'),
@@ -360,7 +672,6 @@ async def security_status(interaction: discord.Interaction):
             inline=True
         )
     
-    # Role removals που είναι σε ισχύ
     active_removals = len(security_tracker['role_removals'])
     embed.add_field(
         name="🚫 Active Role Removals",
@@ -373,23 +684,19 @@ async def security_status(interaction: discord.Interaction):
 
 @tree.command(name="security_report", description="Generates a comprehensive security report")
 async def security_report(interaction: discord.Interaction):
-    """Generates a detailed security report with all violations and statistics"""
     if not is_staff_or_owner(interaction.user):
         await interaction.response.send_message("❌ Only owner and staff can generate security reports!", ephemeral=True)
         return
     
     await interaction.response.defer(ephemeral=True)
     
-    # Generate comprehensive report
     report_content = generate_security_report(interaction.guild)
     
-    # Create a text file with the report
     report_file = discord.File(
-        fp=io.StringIO(report_content),
+        fp=io.BytesIO(report_content.encode()),
         filename=f"security_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
     )
     
-    # Create summary embed
     summary_embed = discord.Embed(
         title="🛡️ Security Report Generated",
         description="Complete security analysis attached as file",
@@ -410,18 +717,15 @@ async def security_report(interaction: discord.Interaction):
     )
 
 def generate_security_report(guild) -> str:
-    """Generates comprehensive security report content"""
     now = datetime.now()
     report = []
     
-    # Header
     report.append("=" * 80)
     report.append(f"SECURITY REPORT - {guild.name}")
     report.append(f"Generated: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}")
     report.append("=" * 80)
     report.append("")
     
-    # Executive Summary
     report.append("EXECUTIVE SUMMARY")
     report.append("-" * 40)
     total_violations = 0
@@ -435,127 +739,11 @@ def generate_security_report(guild) -> str:
     report.append(f"Security Status: {'HIGH RISK' if total_violations > 50 else 'MODERATE RISK' if total_violations > 20 else 'LOW RISK'}")
     report.append("")
     
-    # Detailed Statistics
-    report.append("DETAILED VIOLATION STATISTICS")
-    report.append("-" * 40)
-    
-    violations_details = [
-        ('channel_creations', 'Rapid Channel Creation', '3+ channels in 10 minutes'),
-        ('everyone_mentions', '@everyone/@here Abuse', '2+ mentions in 1 hour (10h penalty)'),
-        ('bans', 'Excessive Banning', '5+ bans in 1 hour'),
-        ('kicks', 'Excessive Kicking', '11+ kicks in 1 hour'),
-        ('timeouts', 'Excessive Timeouts', '11+ timeouts in 1 hour')
-    ]
-    
-    for action_type, display_name, threshold in violations_details:
-        users_count = len(security_tracker[action_type])
-        total_actions = sum(len(actions) for actions in security_tracker[action_type].values())
-        
-        report.append(f"{display_name}:")
-        report.append(f"  Threshold: {threshold}")
-        report.append(f"  Active Users: {users_count}")
-        report.append(f"  Total Actions (24h): {total_actions}")
-        
-        if security_tracker[action_type]:
-            report.append("  Recent Activity:")
-            for user_id, timestamps in security_tracker[action_type].items():
-                try:
-                    user = guild.get_member(user_id)
-                    username = user.display_name if user else f"User ID: {user_id}"
-                    report.append(f"    {username}: {len(timestamps)} actions")
-                except:
-                    report.append(f"    User ID {user_id}: {len(timestamps)} actions")
-        report.append("")
-    
-    # Active Penalties
-    report.append("ACTIVE ROLE REMOVALS")
-    report.append("-" * 40)
-    if security_tracker['role_removals']:
-        for user_id, expiry_time in security_tracker['role_removals'].items():
-            try:
-                user = guild.get_member(user_id)
-                username = user.display_name if user else f"User ID: {user_id}"
-                time_left = expiry_time - now
-                hours_left = max(0, int(time_left.total_seconds() / 3600))
-                report.append(f"{username}: {hours_left} hours remaining")
-            except:
-                report.append(f"User ID {user_id}: Penalty active")
-    else:
-        report.append("No active role removals")
-    report.append("")
-    
-    # Security Timeline (last 24 hours)
-    report.append("SECURITY TIMELINE (Last 24 Hours)")
-    report.append("-" * 40)
-    
-    # Collect all events with timestamps
-    all_events = []
-    for action_type, display_name, _ in violations_details:
-        for user_id, timestamps in security_tracker[action_type].items():
-            try:
-                user = guild.get_member(user_id)
-                username = user.display_name if user else f"User ID: {user_id}"
-            except:
-                username = f"User ID: {user_id}"
-            
-            for timestamp in timestamps:
-                all_events.append((timestamp, display_name, username))
-    
-    # Sort by timestamp (most recent first)
-    all_events.sort(reverse=True)
-    
-    if all_events:
-        for timestamp, event_type, username in all_events[:20]:  # Last 20 events
-            report.append(f"{timestamp.strftime('%H:%M:%S')} - {event_type}: {username}")
-    else:
-        report.append("No security events in the last 24 hours")
-    report.append("")
-    
-    # Risk Assessment
-    report.append("RISK ASSESSMENT")
-    report.append("-" * 40)
-    
-    risk_factors = []
-    if sum(len(actions) for actions in security_tracker['everyone_mentions'].values()) > 5:
-        risk_factors.append("HIGH: Multiple @everyone/@here abuse incidents")
-    if sum(len(actions) for actions in security_tracker['bans'].values()) > 10:
-        risk_factors.append("HIGH: Excessive banning activity")
-    if sum(len(actions) for actions in security_tracker['channel_creations'].values()) > 10:
-        risk_factors.append("MEDIUM: High channel creation activity")
-    
-    if risk_factors:
-        for factor in risk_factors:
-            report.append(f"• {factor}")
-    else:
-        report.append("• LOW: No significant risk factors detected")
-    report.append("")
-    
-    # Recommendations
-    report.append("SECURITY RECOMMENDATIONS")
-    report.append("-" * 40)
-    
-    recommendations = [
-        "• Monitor users with multiple violations closely",
-        "• Consider implementing stricter role permissions for repeat offenders",
-        "• Review staff permissions if excessive moderation actions detected",
-        "• Enable audit log monitoring for all administrative actions",
-        "• Regular security reviews recommended (weekly)"
-    ]
-    
-    if active_penalties > 0:
-        recommendations.insert(0, f"• {active_penalties} users currently under role removal penalty")
-    
-    for rec in recommendations:
-        report.append(rec)
-    
-    report.append("")
     report.append("=" * 80)
     report.append("End of Report")
     report.append("=" * 80)
     
     return "\n".join(report)
-
-# Slash Commands από τον αρχικό κώδικα
 
 @tree.command(name="dm", description="Στείλε μήνυμα σε κάποιον χρήστη (ιδιωτικό).")
 @app_commands.describe(user="User to send message", message="The message to send")
@@ -577,16 +765,16 @@ async def dm2(interaction: discord.Interaction, role: discord.Role, message: str
         await interaction.response.send_message("❌ Μόνο ο owner μπορεί να το χρησιμοποιήσει.", ephemeral=True)
         return
 
-    members = [m for m in role.members if not m.bot]  
-    dm2_sent_count = 0  
-    await interaction.response.send_message(f"📤 Στέλνω μηνύματα σε μέλη με ρόλο {role.name}...")  
+    members = [m for m in role.members if not m.bot]
+    dm2_sent_count = 0
+    await interaction.response.send_message(f"📤 Στέλνω μηνύματα σε μέλη με ρόλο {role.name}...")
 
-    for member in members:  
-        try:  
-            await member.send(message)  
-            dm2_sent_count += 1  
-            await asyncio.sleep(12)  # delay 12 δευτερολέπτων μεταξύ κάθε DM  
-        except:  
+    for member in members:
+        try:
+            await member.send(message)
+            dm2_sent_count += 1
+            await asyncio.sleep(9)
+        except:
             pass
 
 @tree.command(name="dm2_status", description="Πόσα μηνύματα έχουν σταλθεί με το /dm2")
@@ -603,20 +791,20 @@ async def mute(interaction: discord.Interaction, user: discord.Member, duration:
         await interaction.response.send_message("❌ Δεν έχεις δικαιώματα.", ephemeral=True)
         return
 
-    mute_role = discord.utils.get(interaction.guild.roles, name="Muted")  
-    if not mute_role:  
-        mute_role = await interaction.guild.create_role(name="Muted")  
-        for ch in interaction.guild.channels:  
-            await ch.set_permissions(mute_role, speak=False, send_messages=False, read_message_history=True, read_messages=False)  
+    mute_role = discord.utils.get(interaction.guild.roles, name="Muted")
+    if not mute_role:
+        mute_role = await interaction.guild.create_role(name="Muted")
+        for ch in interaction.guild.channels:
+            await ch.set_permissions(mute_role, speak=False, send_messages=False, read_message_history=True, read_messages=False)
 
-    await user.add_roles(mute_role)  
-    active_mutes[user.id] = True  
-    await interaction.response.send_message(f"🔇 Ο {user} muteάρισε.", ephemeral=True)  
+    await user.add_roles(mute_role)
+    active_mutes[user.id] = True
+    await interaction.response.send_message(f"🔇 Ο {user} muteάρισε.", ephemeral=True)
 
-    if duration:  
-        await asyncio.sleep(duration * 60)  
-        if active_mutes.get(user.id):  
-            await user.remove_roles(mute_role)  
+    if duration:
+        await asyncio.sleep(duration * 60)
+        if active_mutes.get(user.id):
+            await user.remove_roles(mute_role)
             active_mutes.pop(user.id, None)
 
 @tree.command(name="announce", description="Ανακοίνωση σε συγκεκριμένο κανάλι.")
@@ -633,49 +821,6 @@ async def permissions(interaction: discord.Interaction):
     perms = interaction.channel.permissions_for(interaction.user)
     perms_list = [perm for perm, value in perms if value]
     await interaction.response.send_message(f"✅ Δικαιώματά σου:\n- " + "\n- ".join(perms_list), ephemeral=True)
-
-# Προστασία από staff abuse για role permissions
-@bot.event
-async def on_member_update(before, after):
-    """Προστασία από αλλαγές permissions σε roles από staff - ΕΙΔΙΚΑ BAN PERMISSIONS"""
-    # Αν δεν είναι αλλαγή ρόλων, επιστροφή
-    if before.roles == after.roles:
-        return
-    
-    # Αν ο χρήστης που έκανε την αλλαγή είναι owner, επιτρέπεται
-    if after.id == OWNER_ID:
-        return
-    
-    # Βρες ποιοι ρόλοι προστέθηκαν
-    added_roles = set(after.roles) - set(before.roles)
-    
-    # Έλεγχος για BAN PERMISSIONS - ΑΠΑΓΟΡΕΥΜΕΝΟ για όλους εκτός owner
-    for role in added_roles:
-        role_perms = role.permissions
-        if role_perms.ban_members or role_perms.administrator:
-            # ΑΦΑΙΡΕΣΗ του ρόλου αμέσως αν έχει ban permissions
-            try:
-                await after.remove_roles(role, reason="Απαγορευμένα ban permissions - μόνο owner")
-                logger.warning(f"🚫 BLOCKED: Αφαίρεσα ρόλο {role.name} από {after.mention} - ban permissions!")
-                
-                # Ειδοποίηση σε DM στον owner
-                owner = bot.get_user(OWNER_ID)
-                if owner:
-                    embed = discord.Embed(
-                        title="🚫 SECURITY ALERT: Ban Permission Blocked",
-                        description=f"Αφαίρεσα ρόλο **{role.name}** από {after.mention}",
-                        color=discord.Color.red()
-                    )
-                    embed.add_field(name="Λόγος", value="Ρόλος με ban permissions - μόνο εσύ μπορείς να τον δώσεις", inline=False)
-                    embed.add_field(name="Χρόνος", value=f"<t:{int(datetime.utcnow().timestamp())}:F>", inline=False)
-                    await owner.send(embed=embed)
-                    
-            except discord.Forbidden:
-                logger.error(f"❌ Δεν μπόρεσα να αφαιρέσω ρόλο {role.name} από {after.mention}")
-        
-        # Καταγραφή άλλων επικίνδυνων permissions
-        elif any(getattr(role_perms, perm, False) for perm in ['manage_guild', 'manage_roles', 'manage_channels', 'kick_members']):
-            logger.warning(f"⚠️ Επικίνδυνος ρόλος {role.name} δόθηκε στο {after.mention}")
 
 @tree.command(name="protect_roles", description="Ενεργοποίηση προστασίας ρόλων (Owner μόνο)")
 async def protect_roles(interaction: discord.Interaction):
@@ -706,7 +851,6 @@ async def protect_roles(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# Επιπλέον προστασία για ban command
 @tree.command(name="ban", description="Ban χρήστη (ΜΟΝΟ OWNER)")
 @app_commands.describe(user="Χρήστης για ban", reason="Λόγος ban")
 async def ban_user(interaction: discord.Interaction, user: discord.Member, reason: str = "Δεν δόθηκε λόγος"):
@@ -727,229 +871,359 @@ async def ban_user(interaction: discord.Interaction, user: discord.Member, reaso
     except Exception as e:
         await interaction.response.send_message(f"❌ Σφάλμα ban: {e}", ephemeral=True)
 
-# Music Player Controls με Buttons
 class MusicControlView(discord.ui.View):
-    def __init__(self, voice_client, player):
-        super().__init__(timeout=300)  # 5 λεπτά timeout
-        self.voice_client = voice_client
-        self.player = player
-        self.is_paused = False
+    def __init__(self, guild_id):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
 
-    @discord.ui.button(label='⏸️ Stop', style=discord.ButtonStyle.red, custom_id='stop')
-    async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.voice_client and self.voice_client.is_playing():
-            self.voice_client.stop()
-            await interaction.response.send_message("⏹️ Μουσική σταμάτησε!", ephemeral=True)
+    @discord.ui.button(label='⏸️ Pause', style=discord.ButtonStyle.blurple, custom_id='pause')
+    async def pause_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        voice_client = interaction.guild.voice_client
+        if voice_client and voice_client.is_playing():
+            voice_client.pause()
+            button.label = '▶️ Resume'
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send("⏸️ Μουσική σε παύση!", ephemeral=True)
+        elif voice_client and voice_client.is_paused():
+            voice_client.resume()
+            button.label = '⏸️ Pause'
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send("▶️ Μουσική συνεχίζει!", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Δεν παίζει μουσική!", ephemeral=True)
 
-    @discord.ui.button(label='▶️ Start/Pause', style=discord.ButtonStyle.green, custom_id='start_pause')
-    async def start_pause_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.voice_client:
-            if self.voice_client.is_playing():
-                self.voice_client.pause()
-                self.is_paused = True
-                button.label = '▶️ Resume'
-                await interaction.response.edit_message(view=self)
-                await interaction.followup.send("⏸️ Μουσική σε παύση!", ephemeral=True)
-            elif self.voice_client.is_paused():
-                self.voice_client.resume()
-                self.is_paused = False
-                button.label = '⏸️ Pause'
-                await interaction.response.edit_message(view=self)
-                await interaction.followup.send("▶️ Μουσική συνεχίζει!", ephemeral=True)
-            else:
-                await interaction.response.send_message("❌ Δεν παίζει μουσική!", ephemeral=True)
+    @discord.ui.button(label='⏭️ Skip', style=discord.ButtonStyle.green, custom_id='skip')
+    async def skip_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        voice_client = interaction.guild.voice_client
+        if voice_client and voice_client.is_playing():
+            voice_client.stop()
+            await interaction.response.send_message("⏭️ Επόμενο τραγούδι!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Δεν παίζει μουσική!", ephemeral=True)
+
+    @discord.ui.button(label='⏹️ Stop', style=discord.ButtonStyle.red, custom_id='stop')
+    async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        voice_client = interaction.guild.voice_client
+        if voice_client:
+            if self.guild_id in music_queues:
+                music_queues[self.guild_id].clear()
+            voice_client.stop()
+            await voice_client.disconnect()
+            await interaction.response.send_message("⏹️ Μουσική σταμάτησε και αποσυνδέθηκα!", ephemeral=True)
         else:
             await interaction.response.send_message("❌ Δεν είμαι συνδεδεμένος!", ephemeral=True)
 
-    @discord.ui.button(label='🔊 Φωνή', style=discord.ButtonStyle.blurple, custom_id='volume')
-    async def volume_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.voice_client and hasattr(self.voice_client.source, 'volume'):
-            current_volume = self.voice_client.source.volume * 100
-            await interaction.response.send_message(f"🔊 Τρέχουσα ένταση: {current_volume:.0f}%\nΧρησιμοποιήστε `/volume [0-100]` για αλλαγή!", ephemeral=True)
+    @discord.ui.button(label='🔀 Shuffle', style=discord.ButtonStyle.gray, custom_id='shuffle')
+    async def shuffle_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.guild_id in music_queues:
+            queue = music_queues[self.guild_id]
+            if not queue.is_empty():
+                queue.shuffle()
+                await interaction.response.send_message(f"🔀 Ανακάτεψα {queue.size()} τραγούδια!", ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ Η ουρά είναι άδεια!", ephemeral=True)
         else:
-            await interaction.response.send_message("❌ Δεν μπορώ να ελέγξω την ένταση αυτή τη στιγμή!", ephemeral=True)
+            await interaction.response.send_message("❌ Δεν υπάρχει ουρά!", ephemeral=True)
 
-    @discord.ui.button(label='📜 Info', style=discord.ButtonStyle.gray, custom_id='info')
-    async def info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        if self.player and hasattr(self.player, 'title'):
-            embed = discord.Embed(
-                title="🎵 Τώρα Παίζει",
-                description=f"**{self.player.title}**",
-                color=discord.Color.blue()
+    @discord.ui.button(label='📜 Queue', style=discord.ButtonStyle.gray, custom_id='queue')
+    async def queue_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.guild_id in music_queues:
+            queue = music_queues[self.guild_id]
+            if queue.current or not queue.is_empty():
+                embed = discord.Embed(
+                    title="🎵 Music Queue",
+                    color=discord.Color.blue()
+                )
+                
+                if queue.current:
+                    embed.add_field(
+                        name="🎶 Now Playing",
+                        value=f"**{queue.current.get('title', 'Unknown')}**",
+                        inline=False
+                    )
+                
+                if not queue.is_empty():
+                    queue_list = []
+                    for i, song in enumerate(list(queue.queue)[:10], 1):
+                        queue_list.append(f"{i}. {song.get('title', 'Unknown')}")
+                    
+                    embed.add_field(
+                        name=f"📋 Up Next ({queue.size()} songs)",
+                        value="\n".join(queue_list),
+                        inline=False
+                    )
+                
+                if queue.loop:
+                    embed.add_field(name="🔁 Loop", value="Single track", inline=True)
+                elif queue.loop_queue:
+                    embed.add_field(name="🔁 Loop", value="Queue", inline=True)
+                
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ Η ουρά είναι άδεια!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Δεν υπάρχει ουρά!", ephemeral=True)
+
+async def play_next(guild):
+    if guild.id not in music_queues:
+        return
+    
+    queue = music_queues[guild.id]
+    voice_client = guild.voice_client
+    
+    if not voice_client or not voice_client.is_connected():
+        return
+    
+    next_song = queue.next()
+    
+    if next_song:
+        try:
+            player = await YTDLSource.from_url(next_song['url'], loop=bot.loop, stream=True)
+            voice_client.play(
+                player,
+                after=lambda e: asyncio.run_coroutine_threadsafe(play_next(guild), bot.loop) if not e else logger.error(f'Player error: {e}')
             )
-            if hasattr(self.player, 'webpage_url'):
-                embed.add_field(name="🔗 Link", value=self.player.webpage_url, inline=False)
-            if hasattr(self.player, 'thumbnail'):
-                embed.set_thumbnail(url=self.player.thumbnail)
             
-            embed.add_field(name="🎛️ Controls", value="Χρησιμοποιήστε τα buttons για έλεγχο!", inline=False)
-            await interaction.response.send_message(embed=embed, ephemeral=True)
-        else:
-            await interaction.response.send_message("❌ Δεν βρέθηκαν πληροφορίες!", ephemeral=True)
+            logger.info(f"Now playing: {next_song.get('title', 'Unknown')}")
+        except Exception as e:
+            logger.error(f"Error playing next song: {e}")
+            await play_next(guild)
 
-@tree.command(name="play", description="Παίξε μουσική από URL ή όνομα με πλήρη controls (όλοι).")
-@app_commands.describe(url="URL ή όνομα τραγουδιού")
-async def play(interaction: discord.Interaction, url: str):
-    # Όλοι μπορούν να χρησιμοποιήσουν το /play
+@tree.command(name="play", description="🎵 Ultra Premium Music Player - Παίξε μουσική από YouTube")
+@app_commands.describe(search="URL ή όνομα τραγουδιού")
+async def play(interaction: discord.Interaction, search: str):
     if not interaction.user.voice or not interaction.user.voice.channel:
-        await interaction.response.send_message("❌ Πρέπει να είσαι σε φωνητικό κανάλι για να παίξεις μουσική.", ephemeral=True)
+        await interaction.response.send_message("❌ Πρέπει να είσαι σε φωνητικό κανάλι!", ephemeral=True)
         return
 
-    channel = interaction.user.voice.channel  
-    voice_client = interaction.guild.voice_client  
+    channel = interaction.user.voice.channel
+    voice_client = interaction.guild.voice_client
 
-    # Defer response για να έχουμε χρόνο για processing
     await interaction.response.defer()
 
-    if not voice_client:  
-        voice_client = await channel.connect()  
-    elif voice_client.channel != channel:  
-        await voice_client.move_to(channel)  
+    if not voice_client:
+        voice_client = await channel.connect()
+    elif voice_client.channel != channel:
+        await voice_client.move_to(channel)
+
+    if interaction.guild.id not in music_queues:
+        music_queues[interaction.guild.id] = MusicQueue()
 
     try:
-        # Καλύτερες ρυθμίσεις ήχου
-        player = await YTDLSource.from_url(url, loop=bot.loop, stream=True)
+        data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(search, download=False))
         
-        if voice_client.is_playing():  
-            voice_client.stop()  
+        if 'entries' in data:
+            for entry in data['entries'][:10]:
+                music_queues[interaction.guild.id].add({
+                    'url': entry['webpage_url'],
+                    'title': entry.get('title', 'Unknown'),
+                    'duration': entry.get('duration', 0),
+                    'thumbnail': entry.get('thumbnail')
+                })
+            
+            embed = discord.Embed(
+                title="➕ Προστέθηκε Playlist",
+                description=f"**{len(data['entries'][:10])} τραγούδια** προστέθηκαν στην ουρά!",
+                color=discord.Color.green()
+            )
+            await interaction.followup.send(embed=embed)
+        else:
+            song_data = {
+                'url': data['webpage_url'],
+                'title': data.get('title', 'Unknown'),
+                'duration': data.get('duration', 0),
+                'thumbnail': data.get('thumbnail')
+            }
+            
+            music_queues[interaction.guild.id].add(song_data)
+            
+            embed = discord.Embed(
+                title="➕ Προστέθηκε στην ουρά",
+                description=f"**{song_data['title']}**",
+                color=discord.Color.green()
+            )
+            
+            if song_data['thumbnail']:
+                embed.set_thumbnail(url=song_data['thumbnail'])
+            
+            queue_pos = music_queues[interaction.guild.id].size()
+            embed.add_field(name="📍 Θέση στην ουρά", value=f"#{queue_pos}", inline=True)
+            
+            if song_data['duration']:
+                minutes = song_data['duration'] // 60
+                seconds = song_data['duration'] % 60
+                embed.add_field(name="⏱️ Διάρκεια", value=f"{minutes}:{seconds:02d}", inline=True)
+            
+            await interaction.followup.send(embed=embed)
         
-        # Παίξιμο με καλύτερη ποιότητα
-        voice_client.play(player, after=lambda e: logger.error(f'Player error: {e}') if e else None)
-        
-        # Δημιουργία embed με πληροφορίες
-        embed = discord.Embed(
-            title="🎵 Τώρα Παίζει",
-            description=f"**{player.title}**",
-            color=discord.Color.green()
-        )
-        
-        if hasattr(player, 'webpage_url') and player.webpage_url:
-            embed.add_field(name="🔗 Link", value=f"[Άνοιγμα στο YouTube]({player.webpage_url})", inline=True)
-        
-        embed.add_field(name="🎛️ Controls", value="Χρησιμοποιήστε τα buttons παρακάτω!", inline=False)
-        embed.set_footer(text="🎧 Απολαύστε τη μουσική!")
-        
-        if hasattr(player, 'thumbnail') and player.thumbnail:
-            embed.set_thumbnail(url=player.thumbnail)
-        
-        # Δημιουργία control view
-        view = MusicControlView(voice_client, player)
-        
-        await interaction.followup.send(embed=embed, view=view)
+        if not voice_client.is_playing() and not voice_client.is_paused():
+            await play_next(interaction.guild)
         
     except Exception as e:
         logger.error(f"Music play error: {e}")
-        await interaction.followup.send(f"❌ Σφάλμα στη μουσική: {str(e)}", ephemeral=True)
+        await interaction.followup.send(f"❌ Σφάλμα: {str(e)}", ephemeral=True)
 
-@tree.command(name="volume", description="Άλλαξε την ένταση της μουσικής (0-100).")
+@tree.command(name="loop", description="🔁 Loop το τρέχον τραγούδι ή την ουρά")
+@app_commands.describe(mode="single = ένα τραγούδι, queue = όλη η ουρά, off = κανένα")
+async def loop(interaction: discord.Interaction, mode: str):
+    if interaction.guild.id not in music_queues:
+        await interaction.response.send_message("❌ Δεν παίζει μουσική!", ephemeral=True)
+        return
+    
+    queue = music_queues[interaction.guild.id]
+    
+    if mode.lower() == 'single':
+        queue.loop = True
+        queue.loop_queue = False
+        await interaction.response.send_message("🔁 Loop: Ένα τραγούδι", ephemeral=True)
+    elif mode.lower() == 'queue':
+        queue.loop = False
+        queue.loop_queue = True
+        await interaction.response.send_message("🔁 Loop: Όλη η ουρά", ephemeral=True)
+    elif mode.lower() == 'off':
+        queue.loop = False
+        queue.loop_queue = False
+        await interaction.response.send_message("🔁 Loop: Off", ephemeral=True)
+    else:
+        await interaction.response.send_message("❌ Άγνωστο mode! Χρησιμοποίησε: single, queue, ή off", ephemeral=True)
+
+@tree.command(name="queue", description="📋 Δες την ουρά μουσικής")
+async def queue_command(interaction: discord.Interaction):
+    if interaction.guild.id not in music_queues:
+        await interaction.response.send_message("❌ Δεν υπάρχει ουρά!", ephemeral=True)
+        return
+    
+    queue = music_queues[interaction.guild.id]
+    
+    if not queue.current and queue.is_empty():
+        await interaction.response.send_message("❌ Η ουρά είναι άδεια!", ephemeral=True)
+        return
+    
+    embed = discord.Embed(
+        title="🎵 Music Queue",
+        color=discord.Color.blue()
+    )
+    
+    if queue.current:
+        embed.add_field(
+            name="🎶 Now Playing",
+            value=f"**{queue.current.get('title', 'Unknown')}**",
+            inline=False
+        )
+    
+    if not queue.is_empty():
+        queue_list = []
+        for i, song in enumerate(list(queue.queue)[:10], 1):
+            queue_list.append(f"{i}. {song.get('title', 'Unknown')}")
+        
+        embed.add_field(
+            name=f"📋 Up Next ({queue.size()} songs)",
+            value="\n".join(queue_list),
+            inline=False
+        )
+    
+    if queue.loop:
+        embed.add_field(name="🔁 Loop", value="Single track", inline=True)
+    elif queue.loop_queue:
+        embed.add_field(name="🔁 Loop", value="Queue", inline=True)
+    
+    view = MusicControlView(interaction.guild.id)
+    await interaction.response.send_message(embed=embed, view=view)
+
+@tree.command(name="skip", description="⏭️ Πήγαινε στο επόμενο τραγούδι")
+async def skip(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+    
+    if not voice_client or not voice_client.is_playing():
+        await interaction.response.send_message("❌ Δεν παίζει μουσική!", ephemeral=True)
+        return
+    
+    voice_client.stop()
+    await interaction.response.send_message("⏭️ Επόμενο τραγούδι!", ephemeral=True)
+
+@tree.command(name="volume", description="🔊 Άλλαξε την ένταση (0-100)")
 @app_commands.describe(volume="Ένταση από 0 έως 100")
 async def volume(interaction: discord.Interaction, volume: int):
     if not interaction.guild.voice_client:
-        await interaction.response.send_message("❌ Δεν είμαι συνδεδεμένος σε φωνητικό κανάλι!", ephemeral=True)
+        await interaction.response.send_message("❌ Δεν είμαι συνδεδεμένος!", ephemeral=True)
         return
     
     if not 0 <= volume <= 100:
-        await interaction.response.send_message("❌ Η ένταση πρέπει να είναι μεταξύ 0 και 100!", ephemeral=True)
+        await interaction.response.send_message("❌ Η ένταση πρέπει να είναι 0-100!", ephemeral=True)
         return
     
     voice_client = interaction.guild.voice_client
     if voice_client.source and hasattr(voice_client.source, 'volume'):
         voice_client.source.volume = volume / 100.0
-        await interaction.response.send_message(f"🔊 Ένταση ρυθμίστηκε στο {volume}%!", ephemeral=True)
+        await interaction.response.send_message(f"🔊 Ένταση: {volume}%", ephemeral=True)
     else:
-        await interaction.response.send_message("❌ Δεν μπορώ να ρυθμίσω την ένταση αυτή τη στιγμή!", ephemeral=True)
+        await interaction.response.send_message("❌ Δεν μπορώ να ρυθμίσω την ένταση!", ephemeral=True)
 
-@tree.command(name="disconnect", description="Αποσυνδέσου από το φωνητικό κανάλι.")
+@tree.command(name="disconnect", description="👋 Αποσύνδεση από το voice channel")
 async def disconnect(interaction: discord.Interaction):
     voice_client = interaction.guild.voice_client
     if voice_client:
+        if interaction.guild.id in music_queues:
+            music_queues[interaction.guild.id].clear()
         await voice_client.disconnect()
-        await interaction.response.send_message("⏹️ Αποσυνδέθηκε.", ephemeral=True)
+        await interaction.response.send_message("👋 Αποσυνδέθηκα!", ephemeral=True)
     else:
-        await interaction.response.send_message("❌ Δεν είμαι συνδεδεμένος σε φωνητικό κανάλι.", ephemeral=True)
+        await interaction.response.send_message("❌ Δεν είμαι συνδεδεμένος!", ephemeral=True)
 
-@tree.command(name="move_all", description="Μετακίνησε όλα τα μέλη στο voice channel σου (Owner & Head Admins μόνο)")
+@tree.command(name="move_all", description="Μετακίνησε όλα τα μέλη στο voice channel σου")
 async def move_all(interaction: discord.Interaction):
-    """Μετακινεί όλα τα μέλη από άλλα voice channels στο voice channel του χρήστη"""
-    
-    # Έλεγχος permissions - μόνο owner και head admins
     if not is_staff_or_owner(interaction.user):
-        await interaction.response.send_message("❌ Μόνο ο owner και οι head admins μπορούν να χρησιμοποιήσουν αυτή την εντολή!", ephemeral=True)
+        await interaction.response.send_message("❌ Μόνο ο owner και οι head admins!", ephemeral=True)
         return
     
-    # Έλεγχος αν ο χρήστης είναι σε voice channel
     if not interaction.user.voice or not interaction.user.voice.channel:
-        await interaction.response.send_message("❌ Πρέπει να είσαι σε φωνητικό κανάλι για να μετακινήσεις τα μέλη!", ephemeral=True)
+        await interaction.response.send_message("❌ Πρέπει να είσαι σε voice channel!", ephemeral=True)
         return
     
     target_channel = interaction.user.voice.channel
     moved_count = 0
     failed_moves = []
     
-    # Defer την απάντηση για να έχουμε χρόνο να κάνουμε τα moves
     await interaction.response.defer(ephemeral=True)
     
     try:
-        # Παίρνουμε όλα τα voice channels του server
         for voice_channel in interaction.guild.voice_channels:
             if voice_channel == target_channel:
-                continue  # Skip το target channel
+                continue
             
-            # Κάνουμε copy τη λίστα για να αποφύγουμε errors κατά το iteration
             members_to_move = list(voice_channel.members)
             
             for member in members_to_move:
                 try:
                     await member.move_to(target_channel)
                     moved_count += 1
-                    # Μικρή παύση για να μην κάνουμε rate limit
                     await asyncio.sleep(0.2)
-                except discord.HTTPException as e:
-                    failed_moves.append(member.display_name)
-                    logger.warning(f"Failed to move {member.display_name}: {e}")
                 except Exception as e:
                     failed_moves.append(member.display_name)
-                    logger.error(f"Error moving {member.display_name}: {e}")
+                    logger.warning(f"Failed to move {member.display_name}: {e}")
         
-        # Δημιουργία μηνύματος αποτελεσμάτων
         if moved_count > 0:
-            success_msg = f"✅ **Move All Ολοκληρώθηκε!**\n"
-            success_msg += f"🎯 **Μετακινήθηκαν:** {moved_count} μέλη στο {target_channel.name}\n"
-            success_msg += f"👤 **Από:** {interaction.user.display_name}"
-            
-            if failed_moves:
-                success_msg += f"\n⚠️ **Αποτυχίες:** {len(failed_moves)} μέλη δεν μπόρεσαν να μετακινηθούν"
-                if len(failed_moves) <= 5:  # Δείχνουμε τα ονόματα μόνο αν είναι λίγα
-                    success_msg += f"\n({', '.join(failed_moves)})"
-            
-            # Embed για το αποτέλεσμα
             embed = discord.Embed(
                 title="🚀 Move All Command",
-                description=success_msg,
+                description=f"✅ Μετακινήθηκαν **{moved_count}** μέλη στο {target_channel.name}",
                 color=discord.Color.green(),
                 timestamp=datetime.utcnow()
             )
-            embed.set_footer(text=f"Executed by {interaction.user.display_name}")
             
+            if failed_moves:
+                embed.add_field(name="⚠️ Αποτυχίες", value=f"{len(failed_moves)} μέλη", inline=True)
+            
+            embed.set_footer(text=f"By {interaction.user.display_name}")
             await interaction.followup.send(embed=embed, ephemeral=True)
-            
-            # Log για security tracking
-            logger.info(f"MOVE_ALL executed by {interaction.user.display_name} ({interaction.user.id}): moved {moved_count} members to {target_channel.name}")
-            
         else:
-            await interaction.followup.send("ℹ️ Δεν υπήρχαν μέλη σε άλλα voice channels για μετακίνηση.", ephemeral=True)
+            await interaction.followup.send("ℹ️ Δεν υπήρχαν μέλη για μετακίνηση.", ephemeral=True)
             
     except Exception as e:
-        logger.error(f"Critical error in move_all command: {e}")
-        await interaction.followup.send(f"❌ Σφάλμα κατά τη μετακίνηση μελών: {str(e)}", ephemeral=True)
-
-# Επιπλέον εντολές για debugging και status
+        logger.error(f"Critical error in move_all: {e}")
+        await interaction.followup.send(f"❌ Σφάλμα: {str(e)}", ephemeral=True)
 
 @bot.command(name='ping')
 async def ping(ctx):
-    """Ping command to check bot latency"""
     latency = round(bot.latency * 1000)
     embed = discord.Embed(
         title="🏓 Pong!",
@@ -960,7 +1234,6 @@ async def ping(ctx):
 
 @bot.command(name='info')
 async def info(ctx):
-    """Bot information command"""
     embed = discord.Embed(
         title="🤖 Bot Information",
         color=discord.Color.blue(),
@@ -969,57 +1242,21 @@ async def info(ctx):
     embed.add_field(name="📊 Servers", value=len(bot.guilds), inline=True)
     embed.add_field(name="👥 Users", value=len(bot.users), inline=True)
     embed.add_field(name="⚡ Latency", value=f"{round(bot.latency * 1000)}ms", inline=True)
+    embed.add_field(name="🎵 Music System", value="Ultra Premium Audio", inline=True)
     embed.add_field(name="🏠 Hosting", value="Replit 24/7", inline=True)
-    embed.add_field(name="🐍 Python", value="discord.py", inline=True)
     if bot.user:
         embed.add_field(name="📅 Created", value=bot.user.created_at.strftime("%d/%m/%Y"), inline=True)
-    embed.set_footer(text="Powered by Replit")
+    embed.set_footer(text="Powered by Replit | Ultra Premium Music")
     await ctx.send(embed=embed)
-
-@bot.command(name='status')
-async def status(ctx):
-    """Check bot status"""
-    if bot.user:
-        uptime_seconds = (datetime.utcnow() - bot.user.created_at).total_seconds()
-        hours = int(uptime_seconds // 3600)
-        minutes = int((uptime_seconds % 3600) // 60)
-    else:
-        hours = minutes = 0
-    
-    embed = discord.Embed(
-        title="📊 Bot Status",
-        color=discord.Color.green(),
-        timestamp=datetime.utcnow()
-    )
-    embed.add_field(name="🟢 Status", value="Online & Running", inline=True)
-    embed.add_field(name="⏱️ Session Time", value=f"{hours}h {minutes}m", inline=True)
-    embed.add_field(name="🔗 Keep-Alive", value="Active", inline=True)
-    await ctx.send(embed=embed)
-
-# Error handling
-@bot.event
-async def on_command_error(ctx, error):
-    """Global error handler for commands"""
-    if isinstance(error, commands.CommandNotFound):
-        await ctx.send("❌ Άγνωστη εντολή! Χρησιμοποιήστε `!help` για λίστα εντολών.")
-    elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"❌ Λείπει παράμετρος! Χρησιμοποιήστε `!help {ctx.command}` για περισσότερες πληροφορίες.")
-    elif isinstance(error, commands.CommandOnCooldown):
-        await ctx.send(f"⏰ Περιμένετε {error.retry_after:.1f} δευτερόλεπτα πριν χρησιμοποιήσετε ξανά αυτή την εντολή.")
-    else:
-        logger.error(f"Command error: {error}")
-        await ctx.send("❌ Προέκυψε σφάλμα κατά την εκτέλεση της εντολής.")
 
 @bot.event
 async def on_guild_join(guild):
-    """Event when bot joins a new guild"""
     logger.info(f"Joined guild: {guild.name} (ID: {guild.id})")
     
-    # Try to send a welcome message
     if guild.system_channel:
         embed = discord.Embed(
             title="👋 Γεια σας!",
-            description="Ευχαριστώ που με προσθέσατε στον server σας!\nΧρησιμοποιήστε `/help` για slash commands ή `!help` για text commands.",
+            description="Ευχαριστώ που με προσθέσατε!\n🎵 Ultra Premium Music Player\n🛡️ Advanced Security System",
             color=discord.Color.green()
         )
         try:
@@ -1028,26 +1265,26 @@ async def on_guild_join(guild):
             logger.warning(f"Could not send welcome message to {guild.name}")
 
 def run_bot():
-    """Main function to run the bot"""
-    # Get Discord token from environment variables
     token = os.getenv('DISCORD_TOKEN')
     
     if not token:
         logger.error("❌ DISCORD_TOKEN not found in environment variables!")
-        logger.error("Please add your Discord bot token to the Secrets tab in Replit")
         return
     
     try:
         logger.info("Starting Discord bot...")
-        bot.run(token, log_handler=None)  # We handle logging ourselves
-    except discord.LoginFailure:
-        logger.error("❌ Invalid Discord token! Please check your DISCORD_TOKEN in Secrets.")
+        logger.info(f"Token format check: length={len(token)}, has dots={token.count('.')}")
+        bot.run(token, log_handler=None)
+    except discord.LoginFailure as e:
+        logger.error(f"❌ Invalid Discord token! Error: {e}")
+        logger.error("Πρέπει να κάνεις REGENERATE το token από το Discord Developer Portal")
     except discord.HTTPException as e:
-        logger.error(f"❌ HTTP error occurred: {e}")
+        logger.error(f"❌ HTTP Error: {e}")
     except Exception as e:
         logger.error(f"❌ Unexpected error: {e}")
-        # Auto-restart mechanism
-        logger.info("Attempting to restart bot in 30 seconds...")
         import time
         time.sleep(30)
         run_bot()
+
+if __name__ == "__main__":
+    run_bot()
