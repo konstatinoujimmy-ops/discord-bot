@@ -1002,10 +1002,40 @@ async def play(interaction: discord.Interaction, search: str):
 
     await interaction.response.defer()
 
-    if not voice_client:
-        voice_client = await channel.connect()
-    elif voice_client.channel != channel:
-        await voice_client.move_to(channel)
+    try:
+        if not voice_client:
+            logger.info(f"Connecting to voice channel: {channel.name}")
+            voice_client = await asyncio.wait_for(
+                channel.connect(timeout=60.0, reconnect=True),
+                timeout=70.0
+            )
+            logger.info("Voice connection successful!")
+        elif voice_client.channel != channel:
+            await voice_client.move_to(channel)
+    except asyncio.TimeoutError:
+        await interaction.followup.send(
+            "❌ **Timeout Error**: Δεν μπόρεσα να συνδεθώ στο voice channel.\n"
+            "⚠️ **Το Replit έχει προβλήματα με Discord voice connections.**\n"
+            "💡 **Λύση**: Δοκίμασε να deploy το bot σε Bot-Hosting.net για 100% λειτουργία!",
+            ephemeral=True
+        )
+        return
+    except discord.ClientException as e:
+        await interaction.followup.send(
+            f"❌ **Voice Connection Error**: {str(e)}\n"
+            "⚠️ **Το Replit environment δεν υποστηρίζει πλήρως Discord voice.**\n"
+            "💡 **Λύση**: Deploy στο Bot-Hosting.net για σταθερή λειτουργία!",
+            ephemeral=True
+        )
+        logger.error(f"Voice connection error: {e}")
+        return
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ **Σφάλμα σύνδεσης**: {str(e)}",
+            ephemeral=True
+        )
+        logger.error(f"Unexpected voice error: {e}")
+        return
 
     if interaction.guild.id not in music_queues:
         music_queues[interaction.guild.id] = MusicQueue()
