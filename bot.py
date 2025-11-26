@@ -1286,22 +1286,33 @@ class PartnershipModal(discord.ui.Modal, title="📧 Partnership Submission"):
                 partnership_channel = bot.get_channel(1250102945589100554)
                 
                 if partnership_channel:
+                    # Format the link properly
+                    formatted_link = link
+                    if "discord.gg/" in link:
+                        formatted_link = "https://" + link
+                    elif "discord.com/invite/" in link:
+                        formatted_link = "https://" + link
+                    
                     embed = discord.Embed(
-                        title="✅ Νέα Partnership Αίτηση",
-                        description=f"**Server:** {guild.name}\n**Link:** discord.gg/{link.split('/')[-1] if '/' in link else link}",
-                        color=discord.Color.green(),
+                        title="🔍 Νέα Partnership Αίτηση - Περιμένει Έγκριση",
+                        description=f"**Server:** {guild.name}\n**Link:** [{formatted_link}]({formatted_link})",
+                        color=discord.Color.blue(),
                         timestamp=datetime.utcnow()
                     )
                     embed.add_field(name="👥 Μέλη", value=f"{member_count}+", inline=True)
                     embed.add_field(name="👤 Αιτητής", value=f"{interaction.user.mention}", inline=True)
+                    embed.add_field(name="🔗 Link", value=f"`{formatted_link}`", inline=False)
                     
                     if guild.icon:
                         embed.set_thumbnail(url=guild.icon.url)
                     
                     embed.set_footer(text=f"ID: {guild.id}")
                     
-                    await partnership_channel.send(embed=embed)
-                    await interaction.followup.send("✅ Η αίτησή σου έχει αποσταλθεί! Ευχαριστούμε! 🎉", ephemeral=True)
+                    # Create the approval view
+                    approval_view = PartnershipApprovalView(guild.name, formatted_link, member_count, interaction.user.id)
+                    
+                    await partnership_channel.send(embed=embed, view=approval_view)
+                    await interaction.followup.send("✅ Η αίτησή σου έχει αποσταλθεί! Περίμενε την έγκριση! 🎉", ephemeral=True)
                 else:
                     await interaction.followup.send("⚠️ Το partnership channel δεν βρέθηκε. Προσπάθησε αργότερα.", ephemeral=True)
             else:
@@ -1315,6 +1326,66 @@ class PartnershipModal(discord.ui.Modal, title="📧 Partnership Submission"):
         except Exception as e:
             logger.error(f"Partnership error: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Σφάλμα: Δοκίμασε ξανά με ένα έγκυρο link.", ephemeral=True)
+
+class PartnershipApprovalView(discord.ui.View):
+    def __init__(self, guild_name, link, member_count, requester_id):
+        super().__init__(timeout=None)
+        self.guild_name = guild_name
+        self.link = link
+        self.member_count = member_count
+        self.requester_id = requester_id
+    
+    @discord.ui.button(label="✅ Accept Partnership", style=discord.ButtonStyle.green, custom_id="partnership_accept")
+    async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != OWNER_ID and not any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles):
+            await interaction.response.send_message("❌ Μόνο ο owner ή staff μπορούν να εγκρίνουν!", ephemeral=True)
+            return
+        
+        await interaction.response.defer()
+        
+        # Create approval embed
+        approval_embed = discord.Embed(
+            title="🎉 Partnership Εγκρίθηκε!",
+            description=f"**{self.guild_name}**",
+            color=discord.Color.gold(),
+            timestamp=datetime.utcnow()
+        )
+        approval_embed.add_field(name="👥 Μέλη", value=f"{self.member_count}+", inline=True)
+        approval_embed.add_field(name="🔗 Link", value=f"[Μπείτε εδώ!]({self.link})", inline=True)
+        approval_embed.add_field(name="📩 Link", value=f"`{self.link}`", inline=False)
+        approval_embed.set_footer(text="Καλώς ήρθατε στην κοινότητα!")
+        
+        # Send to partnership channel
+        partnership_channel = bot.get_channel(1250102945589100554)
+        if partnership_channel:
+            await partnership_channel.send(embed=approval_embed)
+        
+        # Edit the original message
+        approved_embed = discord.Embed(
+            title="✅ Partnership Εγκρίθηκε",
+            description=f"**{self.guild_name}** εγκρίθηκε ως partner!\n\n🔗 **Link:** {self.link}",
+            color=discord.Color.green()
+        )
+        
+        await interaction.message.edit(embed=approved_embed, view=None)
+        await interaction.followup.send(f"✅ Το partnership για **{self.guild_name}** εγκρίθηκε!", ephemeral=True)
+    
+    @discord.ui.button(label="❌ Reject", style=discord.ButtonStyle.red, custom_id="partnership_reject")
+    async def reject_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != OWNER_ID and not any(role.id in STAFF_ROLE_IDS for role in interaction.user.roles):
+            await interaction.response.send_message("❌ Μόνο ο owner ή staff μπορούν να απορρίψουν!", ephemeral=True)
+            return
+        
+        await interaction.response.defer()
+        
+        rejected_embed = discord.Embed(
+            title="❌ Partnership Απορρίφθηκε",
+            description=f"**{self.guild_name}** απορρίφθηκε.",
+            color=discord.Color.red()
+        )
+        
+        await interaction.message.edit(embed=rejected_embed, view=None)
+        await interaction.followup.send(f"❌ Το partnership για **{self.guild_name}** απορρίφθηκε!", ephemeral=True)
 
 class PartnershipView(discord.ui.View):
     def __init__(self):
