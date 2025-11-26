@@ -1253,6 +1253,79 @@ async def move_all(interaction: discord.Interaction):
         logger.error(f"Critical error in move_all: {e}")
         await interaction.followup.send(f"❌ Σφάλμα: {str(e)}", ephemeral=True)
 
+class PartnershipModal(discord.ui.Modal, title="📧 Partnership Submission"):
+    server_link = discord.ui.TextInput(label="Server Link", placeholder="discord.gg/...", min_length=5, max_length=100)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        link = str(self.server_link).strip()
+        
+        if "discord.gg/" not in link and "discord.com/invite/" not in link:
+            await interaction.response.send_message("❌ Λάθος link! Χρησιμοποίησε ένα Discord server link.", ephemeral=True)
+            return
+        
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            invite = await bot.fetch_invite(link)
+            guild = invite.guild
+            member_count = guild.approximate_member_count or 0
+            
+            if member_count >= 450:
+                partnership_channel = bot.get_channel(1250102945589100554)
+                
+                if partnership_channel:
+                    embed = discord.Embed(
+                        title="✅ Νέα Partnership Αίτηση",
+                        description=f"**Server:** {guild.name}\n**Link:** {link}",
+                        color=discord.Color.green(),
+                        timestamp=datetime.utcnow()
+                    )
+                    embed.add_field(name="👥 Μέλη", value=f"{member_count}+", inline=True)
+                    embed.add_field(name="👤 Αιτητής", value=f"{interaction.user.mention}", inline=True)
+                    
+                    if guild.icon:
+                        embed.set_thumbnail(url=guild.icon.url)
+                    
+                    embed.set_footer(text=f"ID: {guild.id}")
+                    
+                    await partnership_channel.send(embed=embed)
+                    await interaction.followup.send("✅ Η αίτησή σου έχει αποσταλθεί! Ευχαριστούμε! 🎉", ephemeral=True)
+                else:
+                    await interaction.followup.send("⚠️ Το partnership channel δεν βρέθηκε. Προσπάθησε αργότερα.", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ Ο server σου έχει μόνο **{member_count}** μέλη. Χρειάζεται τουλάχιστον **450**! 📌", ephemeral=True)
+        
+        except discord.NotFound:
+            await interaction.followup.send("❌ Το link δεν ισχύει ή ο server διαγράφηκε!", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Partnership error: {e}")
+            await interaction.followup.send(f"❌ Σφάλμα: {str(e)}", ephemeral=True)
+
+class PartnershipView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+    
+    @discord.ui.button(label="📤 Submit Server", style=discord.ButtonStyle.green, custom_id="partnership_submit")
+    async def submit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(PartnershipModal())
+
+@tree.command(name="partnership", description="🤝 Υποβολή Partnership Αίτησης")
+async def partnership(interaction: discord.Interaction):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Μόνο ο owner μπορεί να δημιουργήσει το partnership menu!", ephemeral=True)
+        return
+    
+    embed = discord.Embed(
+        title="🤝 Partnership Program",
+        description="Ενδιαφέρεσαι για partnership; Κάνε submit τον server σου!\n\n📌 **Απαιτήσεις:**\n• Τουλάχιστον 450 μέλη\n• Active community",
+        color=discord.Color.blurple()
+    )
+    embed.set_footer(text="Συνολικά: ∞ | Status: Open")
+    
+    view = PartnershipView()
+    await interaction.response.send_message(embed=embed, view=view)
+    await interaction.followup.send("✅ Partnership menu δημιουργήθηκε!", ephemeral=True)
+
 @bot.command(name='ping')
 async def ping(ctx):
     latency = round(bot.latency * 1000)
