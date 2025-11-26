@@ -1259,6 +1259,12 @@ class PartnershipModal(discord.ui.Modal, title="📧 Partnership Submission"):
     async def on_submit(self, interaction: discord.Interaction):
         link = str(self.server_link).strip()
         
+        # Clean up the link if needed
+        if link.startswith("https://"):
+            link = link.replace("https://", "")
+        if link.startswith("http://"):
+            link = link.replace("http://", "")
+        
         if "discord.gg/" not in link and "discord.com/invite/" not in link:
             await interaction.response.send_message("❌ Λάθος link! Χρησιμοποίησε ένα Discord server link.", ephemeral=True)
             return
@@ -1266,9 +1272,15 @@ class PartnershipModal(discord.ui.Modal, title="📧 Partnership Submission"):
         await interaction.response.defer(ephemeral=True)
         
         try:
-            invite = await bot.fetch_invite(link)
+            invite = await bot.fetch_invite(link, with_expiration=True)
             guild = invite.guild
-            member_count = guild.approximate_member_count or 0
+            
+            # Use invite's approximate_member_count as primary source
+            member_count = invite.approximate_member_count
+            if member_count is None or member_count == 0:
+                member_count = guild.approximate_member_count or 0
+            
+            logger.info(f"Partnership request: {guild.name} with {member_count} members (from {interaction.user})")
             
             if member_count >= 450:
                 partnership_channel = bot.get_channel(1250102945589100554)
@@ -1276,7 +1288,7 @@ class PartnershipModal(discord.ui.Modal, title="📧 Partnership Submission"):
                 if partnership_channel:
                     embed = discord.Embed(
                         title="✅ Νέα Partnership Αίτηση",
-                        description=f"**Server:** {guild.name}\n**Link:** {link}",
+                        description=f"**Server:** {guild.name}\n**Link:** discord.gg/{link.split('/')[-1] if '/' in link else link}",
                         color=discord.Color.green(),
                         timestamp=datetime.utcnow()
                     )
@@ -1293,13 +1305,16 @@ class PartnershipModal(discord.ui.Modal, title="📧 Partnership Submission"):
                 else:
                     await interaction.followup.send("⚠️ Το partnership channel δεν βρέθηκε. Προσπάθησε αργότερα.", ephemeral=True)
             else:
-                await interaction.followup.send(f"❌ Ο server σου έχει μόνο **{member_count}** μέλη. Χρειάζεται τουλάχιστον **450**! 📌", ephemeral=True)
+                await interaction.followup.send(f"❌ Ο server σου έχει **{member_count}** μέλη. Χρειάζεται τουλάχιστον **450**! 📌", ephemeral=True)
         
         except discord.NotFound:
             await interaction.followup.send("❌ Το link δεν ισχύει ή ο server διαγράφηκε!", ephemeral=True)
+        except discord.HTTPException as e:
+            logger.error(f"Partnership HTTP error: {e}")
+            await interaction.followup.send(f"❌ Σφάλμα σύνδεσης: Δοκίμασε ξανά σε λίγα λεπτά.", ephemeral=True)
         except Exception as e:
-            logger.error(f"Partnership error: {e}")
-            await interaction.followup.send(f"❌ Σφάλμα: {str(e)}", ephemeral=True)
+            logger.error(f"Partnership error: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Σφάλμα: Δοκίμασε ξανά με ένα έγκυρο link.", ephemeral=True)
 
 class PartnershipView(discord.ui.View):
     def __init__(self):
