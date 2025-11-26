@@ -1253,6 +1253,105 @@ async def move_all(interaction: discord.Interaction):
         logger.error(f"Critical error in move_all: {e}")
         await interaction.followup.send(f"❌ Σφάλμα: {str(e)}", ephemeral=True)
 
+@tree.command(name="movie_night", description="🎬 Έναρξη movie night - ο bot μπαίνει στο voice channel")
+async def movie_night(interaction: discord.Interaction):
+    if not interaction.user.voice or not interaction.user.voice.channel:
+        await interaction.response.send_message("❌ Πρέπει να είσαι σε ένα voice channel!", ephemeral=True)
+        return
+    
+    target_channel = interaction.user.voice.channel
+    
+    try:
+        # Αν ο bot είναι ήδη συνδεδεμένος, αποσυνδέεται πρώτα
+        if interaction.guild.voice_client:
+            await interaction.guild.voice_client.disconnect()
+            await asyncio.sleep(1)
+        
+        # Ο bot μπαίνει στο voice channel
+        await target_channel.connect()
+        
+        embed = discord.Embed(
+            title="🎬 Movie Night Ενεργοποιήθηκε!",
+            description=f"Το bot είναι τώρα στο **{target_channel.name}**\n\n👥 Όταν κάποιος κάνει screen share, θα ειδοποιηθείτε!",
+            color=discord.Color.purple(),
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="📺 Τι κάνω", value="Παρακολουθώ τις screen shares και ενημερώνω όλους!", inline=False)
+        embed.add_field(name="🎥 Screen Share Tips", value="Κάντε κλικ στο εικονίδιο βιντεοκάμερας για να μοιραστείτε την ταινία!", inline=False)
+        
+        await interaction.response.send_message(embed=embed)
+        logger.info(f"Bot joined voice channel {target_channel.name} for movie night")
+        
+    except Exception as e:
+        logger.error(f"Error in movie_night: {e}")
+        await interaction.response.send_message(f"❌ Σφάλμα: {str(e)}", ephemeral=True)
+
+# Track screen shares
+screen_sharing_users = {}
+
+@bot.event
+async def on_presence_update(before, after):
+    """Detects when someone starts/stops screen sharing"""
+    try:
+        # Check if activities changed
+        if before.activities != after.activities:
+            guild = after.guild
+            
+            for activity in after.activities:
+                # Screen sharing detection
+                if isinstance(activity, discord.Streaming) and activity.type == discord.ActivityType.streaming:
+                    if after.id not in screen_sharing_users.get(guild.id, []):
+                        # Someone started streaming/screen sharing
+                        embed = discord.Embed(
+                            title="🎥 Screen Share Ενεργοποιήθηκε!",
+                            description=f"**{after.display_name}** κάνει screen share!\n\n👀 Όλοι μπορούν να δουν την ταινία/περιεχόμενο!",
+                            color=discord.Color.red(),
+                            timestamp=datetime.utcnow()
+                        )
+                        embed.set_thumbnail(url=after.display_avatar.url)
+                        
+                        # Find voice channel where guild members are
+                        for vc in guild.voice_channels:
+                            if after in vc.members and vc.members:
+                                # Send notification to the channel text
+                                try:
+                                    # Try to find a text channel to announce
+                                    general = discord.utils.get(guild.text_channels, name="general") or guild.text_channels[0]
+                                    if general:
+                                        await general.send(embed=embed)
+                                except:
+                                    pass
+                        
+                        # Track this user
+                        if guild.id not in screen_sharing_users:
+                            screen_sharing_users[guild.id] = []
+                        screen_sharing_users[guild.id].append(after.id)
+                        break
+            
+            # Check for stopped streaming
+            for activity in before.activities:
+                if isinstance(activity, discord.Streaming):
+                    if after.id in screen_sharing_users.get(guild.id, []):
+                        # Someone stopped streaming
+                        embed = discord.Embed(
+                            title="⏹️ Screen Share Σταμάτησε",
+                            description=f"**{after.display_name}** σταμάτησε το screen share.",
+                            color=discord.Color.gray(),
+                            timestamp=datetime.utcnow()
+                        )
+                        screen_sharing_users[guild.id].remove(after.id)
+                        
+                        try:
+                            general = discord.utils.get(guild.text_channels, name="general") or guild.text_channels[0]
+                            if general:
+                                await general.send(embed=embed)
+                        except:
+                            pass
+                        break
+    
+    except Exception as e:
+        logger.error(f"Error in presence update: {e}")
+
 class PartnershipModal(discord.ui.Modal, title="📧 Partnership Submission"):
     server_link = discord.ui.TextInput(label="Server Link", placeholder="discord.gg/...", min_length=5, max_length=100)
     
