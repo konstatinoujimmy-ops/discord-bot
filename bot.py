@@ -1326,8 +1326,12 @@ class PartnershipView(discord.ui.View):
 
 @tree.command(name="partnership", description="🤝 Υποβολή Partnership Αίτησης")
 async def partnership(interaction: discord.Interaction):
-    if interaction.user.id != OWNER_ID:
-        await interaction.response.send_message("❌ Μόνο ο owner μπορεί να δημιουργήσει το partnership menu!", ephemeral=True)
+    # Check if user has the required role (1162022515846172723)
+    required_role_id = 1162022515846172723
+    has_role = any(role.id == required_role_id for role in interaction.user.roles)
+    
+    if not has_role and interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Χρειάζεσαι συγκεκριμένο role για να χρησιμοποιήσεις αυτό το command!", ephemeral=True)
         return
     
     embed = discord.Embed(
