@@ -1354,6 +1354,53 @@ async def on_presence_update(before, after):
     except Exception as e:
         logger.error(f"Error in presence update: {e}")
 
+class NSFWConfirmationView(discord.ui.View):
+    def __init__(self, guild, selected_user_ids):
+        super().__init__(timeout=None)
+        self.guild = guild
+        self.selected_user_ids = selected_user_ids
+    
+    @discord.ui.button(label="✅ Επιβεβαίωση Timeout", style=discord.ButtonStyle.green, custom_id="nsfw_confirm_timeout")
+    async def confirm_timeout(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("❌ Μόνο ο owner!", ephemeral=True)
+            return
+        
+        await interaction.response.defer()
+        
+        timeout_applied = 0
+        failed = 0
+        
+        for user_id_str in self.selected_user_ids:
+            try:
+                member = await self.guild.fetch_member(int(user_id_str))
+                timeout_duration = timedelta(minutes=1)
+                timeout_until = datetime.now(timezone.utc) + timeout_duration
+                
+                await member.timeout(timeout_until, reason="NSFW Content Violation")
+                timeout_applied += 1
+            except Exception as e:
+                failed += 1
+                logger.error(f"Error timeout user {user_id_str}: {e}")
+        
+        embed = discord.Embed(
+            title="✅ Timeout Εφαρμόστηκε",
+            description=f"**Επιτυχής:** {timeout_applied}\n**Αποτυχία:** {failed}",
+            color=discord.Color.green(),
+            timestamp=datetime.utcnow()
+        )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    @discord.ui.button(label="❌ Ακύρωση", style=discord.ButtonStyle.red, custom_id="nsfw_cancel_timeout")
+    async def cancel_timeout(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("❌ Μόνο ο owner!", ephemeral=True)
+            return
+        
+        await interaction.response.send_message("❌ Ακυρώθηκε!", ephemeral=True)
+        await interaction.message.delete()
+
 class NSFWEnforcementView(discord.ui.View):
     def __init__(self, violations_list, guild):
         super().__init__(timeout=None)
@@ -1377,31 +1424,21 @@ class NSFWEnforcementView(discord.ui.View):
             await interaction.response.send_message("❌ Μόνο ο owner!", ephemeral=True)
             return
 
-        await interaction.response.defer()
+        if not self.selected_users:
+            await interaction.response.send_message("❌ Δεν έχεις επιλέξει κανέναν χρήστη!", ephemeral=True)
+            return
         
-        timeout_applied = 0
-        failed = 0
-        
-        for user_id_str in self.selected_users:
-            try:
-                member = await self.guild.fetch_member(int(user_id_str))
-                timeout_duration = timedelta(minutes=1)
-                timeout_until = datetime.now(timezone.utc) + timeout_duration
-                
-                await member.timeout(timeout_until, reason="NSFW Content Violation")
-                timeout_applied += 1
-            except Exception as e:
-                failed += 1
-                logger.error(f"Error timeout user {user_id_str}: {e}")
-        
-        embed = discord.Embed(
-            title="✅ Timeout Εφαρμόστηκε",
-            description=f"**Επιτυχής:** {timeout_applied}\n**Αποτυχία:** {failed}",
-            color=discord.Color.green(),
+        # Δημιουργία confirmation message
+        confirmation_embed = discord.Embed(
+            title="⚠️ Επιβεβαίωση Timeout",
+            description=f"Είσαι σίγουρος ότι θέλεις να κάνεις timeout σε **{len(self.selected_users)}** χρήστη(ες) για 1 λεπτό;",
+            color=discord.Color.orange(),
             timestamp=datetime.utcnow()
         )
         
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        confirmation_view = NSFWConfirmationView(self.guild, self.selected_users)
+        
+        await interaction.response.send_message(embed=confirmation_embed, view=confirmation_view, ephemeral=True)
 
 class PartnershipModal(discord.ui.Modal, title="📧 Partnership Submission"):
     server_link = discord.ui.TextInput(label="Server Link", placeholder="discord.gg/...", min_length=5, max_length=100)
