@@ -1894,6 +1894,31 @@ async def on_guild_join(guild):
         except:
             logger.warning(f"Could not send welcome message to {guild.name}")
 
+# Helper function to count all historical messages from a user
+async def count_user_messages(guild, user) -> int:
+    """Count all messages from user in all channels of the guild"""
+    total_count = 0
+    
+    try:
+        # Iterate through all channels in the guild
+        for channel in guild.text_channels:
+            try:
+                # Skip channels bot can't read
+                if not channel.permissions_for(guild.me).read_message_history:
+                    continue
+                
+                # Count messages from this user
+                async for message in channel.history(limit=None):
+                    if message.author.id == user.id:
+                        total_count += 1
+            except:
+                # Skip channels with errors
+                continue
+    except:
+        pass
+    
+    return total_count
+
 # Anime Character System Views
 class AnimeCharacterView(discord.ui.View):
     def __init__(self, user_id, char_options):
@@ -1916,29 +1941,35 @@ class AnimeCharacterView(discord.ui.View):
             await interaction.response.send_message("❌ Αυτό δεν είναι για σένα!", ephemeral=True)
             return
         
+        # Defer response because counting takes time
+        await interaction.response.defer()
+        
         char_id = int(interaction.data['custom_id'].replace('anime_select_', ''))
         char = ANIME_CHARACTERS[char_id]
         guild = interaction.guild
         
-        # Αποθήκευση character
+        # Count all historical messages from this user
+        message_count = await count_user_messages(guild, interaction.user)
+        
+        # Αποθήκευση character with historical message count
         if guild.id not in anime_characters:
             anime_characters[guild.id] = {}
         
         anime_characters[guild.id][interaction.user.id] = {
             'char_id': char_id,
-            'points': 0,
-            'message_count': 0
+            'points': message_count,
+            'message_count': message_count
         }
         
         embed = discord.Embed(
             title=f"🎌 Επέλεξες: {char['name']}!",
-            description=f"**Series:** {char['series']}\n**Points:** 0 ⭐\n**Power Level:** 0%",
+            description=f"**Series:** {char['series']}\n**Points:** {message_count} ⭐\n**Power Level:** {int(message_count * 0.5)}%",
             color=discord.Color.purple()
         )
         embed.set_image(url=char['image'])
-        embed.set_footer(text="Εστάλησαν περισσότερα μηνύματα = πιο δυνατός χαρακτήρας!")
+        embed.set_footer(text=f"Ξεκίνησες με {message_count} points από τα παλιά σου μηνύματα! Νέα = +1 Power")
         
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.followup.send(embed=embed)
 
 class RaidView(discord.ui.View):
     def __init__(self, attacker_id, defenders):
