@@ -2225,7 +2225,7 @@ class RaidView(discord.ui.View):
         )
         attacker_embed.add_field(name="💪 Power", value=f"{attacker_power} ⭐", inline=True)
         attacker_embed.add_field(name="💰 Final Points", value=f"{attacker_data['points']} ⭐", inline=True)
-        attacker_embed.set_image(url=attacker_char['image'])
+        attacker_embed.set_thumbnail(url=interaction.user.display_avatar.url)
         attacker_embed.set_footer(text="ATTACKER")
         
         # Create defender embed with image
@@ -2236,7 +2236,7 @@ class RaidView(discord.ui.View):
         )
         defender_embed.add_field(name="💪 Power", value=f"{defender_power} ⭐", inline=True)
         defender_embed.add_field(name="💰 Final Points", value=f"{defender_data['points']} ⭐", inline=True)
-        defender_embed.set_image(url=defender_char['image'])
+        defender_embed.set_thumbnail(url=defender_user.display_avatar.url)
         defender_embed.set_footer(text="DEFENDER")
         
         # Create battle result embed
