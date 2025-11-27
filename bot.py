@@ -1166,15 +1166,23 @@ async def play(interaction: discord.Interaction, search: str):
                 'thumbnail': data.get('thumbnail')
             }
             
-            music_queues[interaction.guild.id].add(song_data)
-            queue_pos = music_queues[interaction.guild.id].size()
+            # Check if queue was empty BEFORE adding
+            was_queue_empty = music_queues[interaction.guild.id].is_empty() and not music_queues[interaction.guild.id].current
             
-            # If this is the first song (queue_pos == 1), show now playing menu instead of queue message
-            if queue_pos == 1:
-                # Wait a bit for song to start
-                await asyncio.sleep(0.5)
+            music_queues[interaction.guild.id].add(song_data)
+            
+            # If this was first song (queue was empty), start playing and show menu
+            if was_queue_empty:
+                if not voice_client.is_playing() and not voice_client.is_paused():
+                    await play_next(interaction.guild)
                 
-                # Check if song is playing
+                # Wait for song to actually start playing
+                for i in range(15):  # Wait up to 3 seconds
+                    await asyncio.sleep(0.2)
+                    if voice_client.is_playing() and music_queues[interaction.guild.id].current:
+                        break
+                
+                # Show now playing menu
                 if voice_client.is_playing() and music_queues[interaction.guild.id].current:
                     embed = discord.Embed(
                         title="🎵 Τώρα Παίζει",
@@ -1188,24 +1196,18 @@ async def play(interaction: discord.Interaction, search: str):
                     view = PlayMenuView(interaction.guild.id, music_queues[interaction.guild.id].current)
                     await interaction.followup.send(embed=embed, view=view)
                 else:
-                    # If not playing yet, show queue message
+                    # Fallback if not playing
                     embed = discord.Embed(
                         title="➕ Προστέθηκε στην ουρά",
                         description=f"**{song_data['title']}**",
                         color=discord.Color.green()
                     )
-                    
                     if song_data['thumbnail']:
                         embed.set_thumbnail(url=song_data['thumbnail'])
-                    
-                    if song_data['duration']:
-                        minutes = song_data['duration'] // 60
-                        seconds = song_data['duration'] % 60
-                        embed.add_field(name="⏱️ Διάρκεια", value=f"{minutes}:{seconds:02d}", inline=True)
-                    
                     await interaction.followup.send(embed=embed)
             else:
-                # Multiple songs - show queue position
+                # Already playing other songs - show queue position
+                queue_pos = music_queues[interaction.guild.id].size()
                 embed = discord.Embed(
                     title="➕ Προστέθηκε στην ουρά",
                     description=f"**{song_data['title']}**",
@@ -1223,9 +1225,6 @@ async def play(interaction: discord.Interaction, search: str):
                     embed.add_field(name="⏱️ Διάρκεια", value=f"{minutes}:{seconds:02d}", inline=True)
                 
                 await interaction.followup.send(embed=embed)
-        
-        if not voice_client.is_playing() and not voice_client.is_paused():
-            await play_next(interaction.guild)
         
     except Exception as e:
         logger.error(f"Music play error: {e}")
