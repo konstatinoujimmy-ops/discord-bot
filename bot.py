@@ -2126,6 +2126,9 @@ class RaidView(discord.ui.View):
             await interaction.response.send_message("❌ Αυτό δεν είναι για σένα!", ephemeral=True)
             return
         
+        # Reload latest data
+        load_anime_data()
+        
         defender_id = int(interaction.data['custom_id'].replace('raid_attack_', ''))
         guild = interaction.guild
         
@@ -2186,6 +2189,9 @@ class RaidView(discord.ui.View):
 
 @tree.command(name="my_anime_character", description="🎌 Διάλεξε τον anime character σου και γίνε πιο δυνατός!")
 async def my_anime_character(interaction: discord.Interaction):
+    # Reload data from file to ensure we have latest
+    load_anime_data()
+    
     guild = interaction.guild
     
     # Check if already has character
@@ -2234,6 +2240,9 @@ async def my_anime_character(interaction: discord.Interaction):
 
 @tree.command(name="raid", description="⚔️ Κάνε raid σε άλλον anime character και κλέψε points!")
 async def raid(interaction: discord.Interaction):
+    # Reload data from file to ensure we have latest
+    load_anime_data()
+    
     guild = interaction.guild
     
     # Check if user has character
