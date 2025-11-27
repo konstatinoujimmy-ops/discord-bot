@@ -1189,10 +1189,12 @@ async def play(interaction: discord.Interaction, search: str):
         
         if not voice_client.is_playing() and not voice_client.is_paused():
             await play_next(interaction.guild)
+            # Wait for song to start playing
+            await asyncio.sleep(1)
         
-        # Send now playing menu
+        # Send now playing menu (only if song is actually playing)
         queue = music_queues[interaction.guild.id]
-        if queue.current:
+        if voice_client.is_playing() and queue.current:
             embed = discord.Embed(
                 title="🎵 Τώρα Παίζει",
                 description=f"▶️ **{queue.current.get('title', 'Unknown')}**\n\n🔗 **Link**\nΆνοιγμα στο YouTube\n\n🎮 **Controls**\nΧρησιμοποιήστε τα buttons παρακάτω!\n\n↓ Απολάύστε τη μουσική!",
