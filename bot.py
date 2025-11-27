@@ -2127,8 +2127,13 @@ async def raid(interaction: discord.Interaction):
 
 @tree.command(name="check_partnerships", description="📊 Μέτρησε πόσα server links υπάρχουν στο partnership channel")
 async def check_partnerships(interaction: discord.Interaction):
-    if interaction.user.id != OWNER_ID:
-        await interaction.response.send_message("❌ Μόνο ο owner μπορεί να το χρησιμοποιήσει!", ephemeral=True)
+    # Check if user is owner or has zeno role
+    ZENO_ROLE_ID = 1162022515846172723
+    is_owner = interaction.user.id == OWNER_ID
+    has_zeno_role = any(role.id == ZENO_ROLE_ID for role in interaction.user.roles) if hasattr(interaction.user, 'roles') else False
+    
+    if not (is_owner or has_zeno_role):
+        await interaction.response.send_message("❌ Μόνο ο owner ή κάποιος με το role zeno μπορεί να το χρησιμοποιήσει!", ephemeral=True)
         return
     
     await interaction.response.defer(ephemeral=True)
