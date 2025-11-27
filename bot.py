@@ -1772,16 +1772,48 @@ async def info(ctx):
     await ctx.send(embed=embed)
 
 async def check_image_nsfw(image_url: str) -> bool:
-    """Checks if image contains NSFW content using simple heuristics"""
+    """Checks if image contains NSFW content using Sightengine API"""
+    api_key = os.getenv('SIGHTENGINE_API_KEY')
+    
+    if not api_key:
+        logger.warning("⚠️ SIGHTENGINE_API_KEY not found - skipping NSFW detection")
+        return False
+    
     try:
+        params = {
+            'url': image_url,
+            'models': 'nudity',
+            'api_user': '18847313',  # Sightengine user ID
+            'api_secret': api_key
+        }
+        
         async with aiohttp.ClientSession() as session:
-            async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            async with session.get(
+                'https://api.sightengine.com/1.0/check.json',
+                params=params,
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as resp:
                 if resp.status == 200:
-                    # Simple NSFW detection - check image characteristics
-                    # This is a basic implementation
-                    return False  # Default to safe unless we have explicit NSFW detection
+                    data = await resp.json()
+                    
+                    # Check nudity score (0-1, where 1 is definitely NSFW)
+                    nudity_score = data.get('nudity', {}).get('raw', 0)
+                    
+                    # If nudity score > 0.7, consider it NSFW
+                    if nudity_score > 0.7:
+                        logger.warning(f"🔞 NSFW detected! Nudity score: {nudity_score}")
+                        return True
+                    
+                    return False
+                else:
+                    logger.warning(f"Sightengine API error: status {resp.status}")
+                    return False
+                    
+    except asyncio.TimeoutError:
+        logger.warning("Sightengine API timeout")
+        return False
     except Exception as e:
-        logger.error(f"Error checking image: {e}")
+        logger.error(f"Error checking image with Sightengine: {e}")
         return False
 
 @bot.event
