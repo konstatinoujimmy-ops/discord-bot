@@ -2136,6 +2136,15 @@ async def check_partnerships(interaction: discord.Interaction):
     # Partnership channel ID
     PARTNERSHIP_CHANNEL_ID = 1250102945589100554
     
+    # Mitsos server links
+    MITSOS_LINKS = [
+        'fdYHkq5JPf',
+        'Py8539d8zX',
+        'Q9EVTpnBhu',
+        'DTpdEGGwxk',
+        'JtyjMmZ5n'
+    ]
+    
     try:
         partnership_channel = await bot.fetch_channel(PARTNERSHIP_CHANNEL_ID)
         
@@ -2143,17 +2152,19 @@ async def check_partnerships(interaction: discord.Interaction):
             await interaction.followup.send("❌ Δεν βρέθηκε το partnership channel!", ephemeral=True)
             return
         
-        # Collect all partnership links and server references
+        # Collect all partnership messages with links
         partnerships = []
-        async for message in partnership_channel.history(limit=200):
+        async for message in partnership_channel.history(limit=300):
             content = message.content
-            # Look for Discord server names or links
-            if 'discord.gg/' in content or 'discord.com/invite/' in content or '@' in content:
+            if 'discord.gg/' in content or 'discord.com/invite/' in content:
+                # Extract invite codes
+                import re
+                invite_codes = re.findall(r'discord\.gg/(\w+)|discord\.com/invite/(\w+)', content)
                 partnerships.append({
-                    'message_id': message.id,
-                    'content': content,
                     'author': message.author.name if message.author else 'Unknown',
-                    'timestamp': message.created_at
+                    'content': content,
+                    'timestamp': message.created_at,
+                    'invite_codes': [code[0] or code[1] for code in invite_codes]
                 })
         
         if not partnerships:
@@ -2162,53 +2173,47 @@ async def check_partnerships(interaction: discord.Interaction):
         
         # Create report
         report_embed = discord.Embed(
-            title="🔍 Partnership Link Verification Report",
-            description=f"⏳ Ελέγχω {len(partnerships)} partnerships για διαγραφές...",
+            title="🔍 Partnership Verification Report",
+            description=f"⏳ Ελέγχω {len(partnerships)} partnerships...",
             color=discord.Color.blurple(),
             timestamp=datetime.now()
         )
         
-        deleted_links = []
-        active_links = []
+        deleted_servers = []
+        active_servers = []
         
-        # Check each partnership message for our server link
-        # Looking for "dragon ball" or our invite link specifically
-        our_server_keywords = ['dragon ball', 'discord.gg/', 'our link', 'server link']
-        
-        for i, partnership in enumerate(partnerships[:15]):
-            content_lower = partnership['content'].lower()
-            has_link = any(keyword in content_lower for keyword in our_server_keywords)
+        for partnership in partnerships[:20]:
+            has_mitsos_link = any(mitsos_code in partnership['content'] for mitsos_code in MITSOS_LINKS)
             
-            if has_link:
-                active_links.append(partnership)
-                status = "✅ Ενεργό"
+            if has_mitsos_link:
+                active_servers.append(partnership)
             else:
-                deleted_links.append(partnership)
-                status = "❌ ΔΙΑΓΡΑΜΜΕΝΟ"
+                deleted_servers.append(partnership)
             
-            if len(deleted_links) + len(active_links) <= 12:
+            status = "✅" if has_mitsos_link else "❌"
+            
+            if len(report_embed.fields) < 10:
                 report_embed.add_field(
-                    name=f"{status} - {partnership['author'][:20]}",
-                    value=f"📅 {partnership['timestamp'].strftime('%d/%m/%Y')}\n`{partnership['content'][:50]}...`",
-                    inline=False
+                    name=f"{status} {partnership['author'][:20]}",
+                    value=f"📅 {partnership['timestamp'].strftime('%d/%m/%Y')}",
+                    inline=True
                 )
         
-        report_embed.add_field(
-            name="📊 Σύνοψη Ελέγχου",
-            value=f"✅ **Ενεργά:** {len(active_links)}\n❌ **Διαγραμμένα:** {len(deleted_links)}\n📋 **Σύνολο:** {len(partnerships[:15])}",
-            inline=False
-        )
+        # Summary
+        summary = f"✅ **Ενεργά:** {len(active_servers)}\n❌ **Διαγραμμένα:** {len(deleted_servers)}\n📋 **Σύνολο:** {len(partnerships[:20])}"
+        report_embed.add_field(name="📊 Σύνοψη", value=summary, inline=False)
         
-        if deleted_links:
-            deleted_names = ", ".join([p['author'] for p in deleted_links[:5]])
+        # List deleted servers
+        if deleted_servers:
+            deleted_list = "\n".join([f"• {s['author']}" for s in deleted_servers[:10]])
             report_embed.add_field(
-                name="⚠️ ΠΡΟΣΟΧΗ - Διαγραμμένα Links",
-                value=f"Αυτοί οι servers έχουν διαγράψει το link σας:\n• {deleted_names}",
+                name="⚠️ ΔΙΑΓΡΑΜΜΕΝΑ - Servers που αφαίρεσαν το link σας",
+                value=deleted_list,
                 inline=False
             )
         
         await interaction.followup.send(embed=report_embed, ephemeral=True)
-        logger.info(f"Partnership check: {len(active_links)} active, {len(deleted_links)} deleted")
+        logger.info(f"Partnership check: {len(active_servers)} active, {len(deleted_servers)} deleted")
         
     except Exception as e:
         logger.error(f"Error checking partnerships: {e}")
