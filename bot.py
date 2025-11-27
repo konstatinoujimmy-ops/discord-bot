@@ -2170,11 +2170,17 @@ async def raid(interaction: discord.Interaction):
     view = RaidView(interaction.user.id, defenders)
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+async def recall_members_check(interaction: discord.Interaction) -> bool:
+    """Check if user is owner or has zeno role"""
+    ZENO_ROLE_ID = 1162022515846172723
+    is_owner = interaction.user.id == OWNER_ID
+    has_zeno_role = any(role.id == ZENO_ROLE_ID for role in interaction.user.roles) if hasattr(interaction.user, 'roles') else False
+    return is_owner or has_zeno_role
+
 @tree.command(name="recall_members", description="📢 Στείλε DM σε members που έφυγαν τις τελευταίες 30 μέρες")
+@app_commands.check(recall_members_check)
 async def recall_members(interaction: discord.Interaction):
-    if interaction.user.id != OWNER_ID:
-        await interaction.response.send_message("❌ Μόνο ο owner μπορεί να το χρησιμοποιήσει!", ephemeral=True)
-        return
+    # Permission check already done by decorator, so no need to check again
     
     await interaction.response.defer(ephemeral=True)
     
