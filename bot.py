@@ -1164,16 +1164,6 @@ async def play(interaction: discord.Interaction, search: str):
                 
                 view = PlayMenuView(interaction.guild.id, queue.current)
                 await interaction.followup.send(embed=embed, view=view)
-            else:
-                # Fallback
-                embed = discord.Embed(
-                    title="➕ Προστέθηκε",
-                    description=f"**{song_data['title']}**",
-                    color=discord.Color.green()
-                )
-                if song_data['thumbnail']:
-                    embed.set_thumbnail(url=song_data['thumbnail'])
-                await interaction.followup.send(embed=embed)
         
     except Exception as e:
         logger.error(f"Music play error: {e}")
