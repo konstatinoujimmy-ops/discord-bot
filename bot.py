@@ -2312,6 +2312,48 @@ async def recall_members(interaction: discord.Interaction):
         logger.error(f"Error recalling members: {e}")
         await interaction.followup.send(f"❌ Σφάλμα: {str(e)[:100]}", ephemeral=True)
 
+@tree.command(name="recall_stats", description="📊 Δες πόσα άτομα έχουν λάβει recall DMs")
+@app_commands.check(recall_members_check)
+async def recall_stats(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        recall_tracking = load_recall_tracking()
+        recalled_count = len(recall_tracking.get('recalled', []))
+        
+        stats_embed = discord.Embed(
+            title="📊 Recall Statistics",
+            description="Πόσα άτομα έχουν λάβει recall DMs μέχρι τώρα",
+            color=discord.Color.blue()
+        )
+        
+        stats_embed.add_field(
+            name="👥 Σύνολο Recalled Members",
+            value=f"**{recalled_count}** άτομα",
+            inline=False
+        )
+        
+        if recalled_count == 0:
+            stats_embed.add_field(
+                name="💭 Status",
+                value="Κανένας δεν έχει λάβει recall DM ακόμα!",
+                inline=False
+            )
+        else:
+            stats_embed.add_field(
+                name="💭 Status",
+                value=f"Ήδη έχουν ενημερωθεί **{recalled_count}** members να ξανάμπούνε!",
+                inline=False
+            )
+        
+        stats_embed.set_footer(text="Κάθε φορά που κάνεις /recall_members, ο αριθμός αυξάνεται!")
+        
+        await interaction.followup.send(embed=stats_embed, ephemeral=True)
+        
+    except Exception as e:
+        logger.error(f"Error getting recall stats: {e}")
+        await interaction.followup.send(f"❌ Σφάλμα: {str(e)[:100]}", ephemeral=True)
+
 @tree.command(name="check_partnerships", description="📊 Μέτρησε πόσα server links υπάρχουν στο partnership channel")
 async def check_partnerships(interaction: discord.Interaction):
     # Check if user is owner or has zeno role
