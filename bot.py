@@ -2125,7 +2125,7 @@ async def raid(interaction: discord.Interaction):
     view = RaidView(interaction.user.id, defenders)
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
-@tree.command(name="check_partnerships", description="🔍 Ελέγξε ποια servers έχουν διαγράψει το link του server μας")
+@tree.command(name="check_partnerships", description="📊 Μέτρησε πόσα server links υπάρχουν στο partnership channel")
 async def check_partnerships(interaction: discord.Interaction):
     if interaction.user.id != OWNER_ID:
         await interaction.response.send_message("❌ Μόνο ο owner μπορεί να το χρησιμοποιήσει!", ephemeral=True)
@@ -2133,17 +2133,7 @@ async def check_partnerships(interaction: discord.Interaction):
     
     await interaction.response.defer(ephemeral=True)
     
-    # Partnership channel ID
     PARTNERSHIP_CHANNEL_ID = 1250102945589100554
-    
-    # Mitsos server links
-    MITSOS_LINKS = [
-        'fdYHkq5JPf',
-        'Py8539d8zX',
-        'Q9EVTpnBhu',
-        'DTpdEGGwxk',
-        'JtyjMmZ5n'
-    ]
     
     try:
         partnership_channel = await bot.fetch_channel(PARTNERSHIP_CHANNEL_ID)
@@ -2152,62 +2142,59 @@ async def check_partnerships(interaction: discord.Interaction):
             await interaction.followup.send("❌ Δεν βρέθηκε το partnership channel!", ephemeral=True)
             return
         
-        # Parse the partnership summary message to find deleted servers
-        deleted_servers_list = []
+        import re
         
-        async for message in partnership_channel.history(limit=100):
+        # Ψάχνω όλα τα messages για discord.gg links
+        all_links = []
+        link_sources = {}
+        
+        async for message in partnership_channel.history(limit=500):
             content = message.content
             
-            # Look for the summary message with deleted servers
-            if "ΔΙΑΓΡΑΜΜΕΝΑ" in content and "Servers που αφαίρεσαν" in content:
-                # Extract server names from the list
-                lines = content.split('\n')
-                in_deleted_section = False
-                
-                for line in lines:
-                    if "Servers που αφαίρεσαν" in line or "servers που διέγραψαν" in line.lower():
-                        in_deleted_section = True
-                        continue
-                    
-                    if in_deleted_section and line.strip().startswith('*'):
-                        server_name = line.strip().lstrip('* ').strip()
-                        if server_name and server_name not in deleted_servers_list:
-                            deleted_servers_list.append(server_name)
+            # Εξάγω όλα τα discord.gg links
+            links = re.findall(r'discord\.gg/(\w+)', content)
+            
+            if links:
+                for link in links:
+                    all_links.append(link)
+                    if link not in link_sources:
+                        link_sources[link] = 0
+                    link_sources[link] += 1
         
-        # If we found the summary, use it
-        if deleted_servers_list:
-            report_embed = discord.Embed(
-                title="🔍 Partnership Verification Report",
-                description=f"Servers που έχουν διαγράψει το link σας",
-                color=discord.Color.red(),
-                timestamp=datetime.now()
-            )
-            
-            # Add deleted servers
-            if deleted_servers_list:
-                # Count occurrences
-                server_counts = {}
-                for server in deleted_servers_list:
-                    server_counts[server] = server_counts.get(server, 0) + 1
-                
-                deleted_text = "\n".join([f"❌ {name} ({count}x)" for name, count in sorted(server_counts.items(), key=lambda x: x[1], reverse=True)])
-                report_embed.add_field(
-                    name="⚠️ ΔΙΑΓΡΑΜΜΕΝΑ Links",
-                    value=deleted_text,
-                    inline=False
-                )
-            
-            # Summary stats
-            report_embed.add_field(
-                name="📊 Σύνοψη",
-                value=f"**Σύνολο Διαγραμμένων:** {len(deleted_servers_list)}\n**Μοναδικά Servers:** {len(set(deleted_servers_list))}",
-                inline=False
-            )
-            
-            await interaction.followup.send(embed=report_embed, ephemeral=True)
-            logger.info(f"Partnership check: Found {len(deleted_servers_list)} deleted entries")
-        else:
-            await interaction.followup.send("✅ Δεν βρέθηκαν διαγραμμένα links! Όλα είναι ενεργά!", ephemeral=True)
+        if not all_links:
+            await interaction.followup.send("❌ Δεν βρέθηκαν links στο partnership channel!", ephemeral=True)
+            return
+        
+        # Μοναδικά links
+        unique_links = len(set(all_links))
+        total_mentions = len(all_links)
+        
+        # Δημιουργώ embed
+        report_embed = discord.Embed(
+            title="📊 Partnership Links Report",
+            description=f"Στατιστικά των links στο partnership channel",
+            color=discord.Color.blurple(),
+            timestamp=datetime.now()
+        )
+        
+        # Summary
+        report_embed.add_field(
+            name="📈 Σύνοψη",
+            value=f"**Μοναδικά Links:** {unique_links}\n**Συνολικές Αναφορές:** {total_mentions}",
+            inline=False
+        )
+        
+        # Top links
+        sorted_links = sorted(link_sources.items(), key=lambda x: x[1], reverse=True)
+        top_links_text = "\n".join([f"🔗 `discord.gg/{link}` - {count} φορές" for link, count in sorted_links[:15]])
+        report_embed.add_field(
+            name="🔝 Top Links",
+            value=top_links_text,
+            inline=False
+        )
+        
+        await interaction.followup.send(embed=report_embed, ephemeral=True)
+        logger.info(f"Partnership check: {unique_links} unique links, {total_mentions} total mentions")
         
     except Exception as e:
         logger.error(f"Error checking partnerships: {e}")
