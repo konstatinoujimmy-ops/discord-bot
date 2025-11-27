@@ -1189,27 +1189,39 @@ async def play(interaction: discord.Interaction, search: str):
         
         if not voice_client.is_playing() and not voice_client.is_paused():
             await play_next(interaction.guild)
-            # Wait for song to start playing
-            await asyncio.sleep(1)
-        
-        # Send now playing menu (only if song is actually playing)
-        queue = music_queues[interaction.guild.id]
-        if voice_client.is_playing() and queue.current:
-            embed = discord.Embed(
-                title="🎵 Τώρα Παίζει",
-                description=f"▶️ **{queue.current.get('title', 'Unknown')}**\n\n🔗 **Link**\nΆνοιγμα στο YouTube\n\n🎮 **Controls**\nΧρησιμοποιήστε τα buttons παρακάτω!\n\n↓ Απολάύστε τη μουσική!",
-                color=discord.Color.green()
-            )
-            
-            if queue.current.get('thumbnail'):
-                embed.set_thumbnail(url=queue.current['thumbnail'])
-            
-            view = PlayMenuView(interaction.guild.id, queue.current)
-            await interaction.followup.send(embed=embed, view=view)
         
     except Exception as e:
         logger.error(f"Music play error: {e}")
         await interaction.followup.send(f"❌ Σφάλμα: {str(e)}", ephemeral=True)
+
+@tree.command(name="now_playing", description="🎵 Δες τη μουσική που παίζει τώρα με controls")
+async def now_playing(interaction: discord.Interaction):
+    voice_client = interaction.guild.voice_client
+    
+    if not voice_client or not voice_client.is_playing():
+        await interaction.response.send_message("❌ Δεν παίζει μουσική!", ephemeral=True)
+        return
+    
+    if interaction.guild.id not in music_queues:
+        await interaction.response.send_message("❌ Δεν υπάρχει ουρά!", ephemeral=True)
+        return
+    
+    queue = music_queues[interaction.guild.id]
+    if not queue.current:
+        await interaction.response.send_message("❌ Δεν υπάρχει τραγούδι!", ephemeral=True)
+        return
+    
+    embed = discord.Embed(
+        title="🎵 Τώρα Παίζει",
+        description=f"▶️ **{queue.current.get('title', 'Unknown')}**\n\n🔗 **Link**\nΆνοιγμα στο YouTube\n\n🎮 **Controls**\nΧρησιμοποιήστε τα buttons παρακάτω!\n\n↓ Απολάύστε τη μουσική!",
+        color=discord.Color.green()
+    )
+    
+    if queue.current.get('thumbnail'):
+        embed.set_thumbnail(url=queue.current['thumbnail'])
+    
+    view = PlayMenuView(interaction.guild.id, queue.current)
+    await interaction.response.send_message(embed=embed, view=view)
 
 @tree.command(name="loop", description="🔁 Loop το τρέχον τραγούδι ή την ουρά")
 @app_commands.describe(mode="single = ένα τραγούδι, queue = όλη η ουρά, off = κανένα")
