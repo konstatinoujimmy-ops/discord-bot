@@ -2052,6 +2052,53 @@ async def my_anime_character(interaction: discord.Interaction):
     
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+@tree.command(name="admin_power", description="🔧 [OWNER] Προσθέσε ή αφαίρεσε power level από κάποιον")
+@app_commands.describe(
+    user="Ποιον χρήστη;",
+    operation="Add (Προσθήκη) ή Remove (Αφαίρεση)",
+    amount="Πόσο power level;"
+)
+@app_commands.choices(operation=[
+    app_commands.Choice(name="Add (Προσθήκη)", value="add"),
+    app_commands.Choice(name="Remove (Αφαίρεση)", value="remove")
+])
+async def admin_power(interaction: discord.Interaction, user: discord.User, operation: str, amount: app_commands.Range[int, 1, 99999]):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Μόνο ο owner μπορεί να κάνει αυτό!", ephemeral=True)
+        return
+    
+    load_anime_data()
+    guild = interaction.guild
+    
+    # Check if target user has character
+    if guild.id not in anime_characters or user.id not in anime_characters[guild.id]:
+        await interaction.response.send_message(f"❌ Ο {user.mention} δεν έχει διαλέξει character ακόμα!", ephemeral=True)
+        return
+    
+    user_data = anime_characters[guild.id][user.id]
+    old_points = user_data['points']
+    
+    if operation == "add":
+        user_data['points'] += amount
+        embed = discord.Embed(
+            title="✅ Power Added",
+            description=f"{user.mention} πήρε **+{amount} ⭐ power**",
+            color=discord.Color.green()
+        )
+    else:  # remove
+        user_data['points'] = max(0, user_data['points'] - amount)
+        embed = discord.Embed(
+            title="✅ Power Removed",
+            description=f"{user.mention} έχασε **-{amount} ⭐ power**",
+            color=discord.Color.red()
+        )
+    
+    embed.add_field(name="Before", value=f"{old_points} ⭐", inline=True)
+    embed.add_field(name="After", value=f"{user_data['points']} ⭐", inline=True)
+    
+    save_anime_data()
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 @tree.command(name="raid", description="⚔️ Κάνε raid σε άλλον anime character και κλέψε points!")
 async def raid(interaction: discord.Interaction):
     # Reload data from file to ensure we have latest
