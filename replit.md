@@ -1,6 +1,6 @@
 # Overview
 
-This is a 24/7 Discord bot designed to run continuously on Bot-Hosting.net with feature-rich gaming and moderation systems. The bot includes music playback (YouTube via yt-dlp), voice channel management, advanced security monitoring, moderation tools, partnership management system, NSFW content detection, anime character gamification, and comprehensive slash commands. All communication is in Greek language exclusively.
+This is a 24/7 Discord bot designed to run continuously on Replit with feature-rich gaming and moderation systems. The bot includes music playback (YouTube via yt-dlp), voice channel management, advanced security monitoring, moderation tools, partnership management system, anime character gamification, and comprehensive slash commands. **NSFW detection system removed.** All communication is in Greek language exclusively. Bot stays online 24/7 using Flask keep-alive + auto-ping mechanism.
 
 # User Preferences
 
@@ -8,17 +8,17 @@ Preferred communication style: Simple, everyday language - Greek only, no Portug
 Device: Mobile only - requires simple step-by-step guidance with visual confirmations.
 
 ## Recent Changes (November 27, 2025 - Latest)
-- **ANIME CHARACTER SYSTEM COMPLETE**: Full gamification system with 52 viral anime characters
-- **Character Selection**: `/my_anime_character` command with 3 random unique options per user
-- **Character Display**: Each character shows image + series name + stats
-- **Historical Message Counting**: Automatically counts all past messages (up to 50k per channel) when character is selected
-- **Stats Display**: Shows Points ⭐, Message Count 📝, Power Level 💪% with formatted numbers
-- **Persistent Stats**: When user re-runs `/my_anime_character`, shows their current character with all stats
-- **Power Calculation**: Power Level = Message Count × 0.1%
-- **Raid System**: `/raid` command to battle other players' characters
-- **Point Theft Mechanic**: Winner takes 50% of loser's points in raid battles
-- **Real-time Updates**: Message counter updates character power automatically
-- **Complete Infraction Tracking**: `/infractions` and `/add_infraction` commands with violation history
+
+### Session 27/11 Updates:
+- **NSFW REMOVAL**: Deleted all NSFW detection command (`/nsfw`, NSFWConfirmationView, NSFWEnforcementView classes)
+- **24/7 UPTIME OPTIMIZATION**: 
+  - Reduced auto-ping interval from 3 to 2 minutes for maximum uptime
+  - Added Flask + aiohttp to requirements.txt
+  - Verified keep-alive system: Flask server on port 5000 + auto-ping loop
+  - Bot stays alive through continuous pinging every 2 minutes
+- **Anime Character Raid System**: Three-embed display with user avatars (attacker, battle result, defender)
+- **Character Stats System**: Points ⭐, Message Count 📝, Power Level 💪
+- **Complete Infraction Tracking**: Types now TIMEOUT/MUTE/KICK/BAN (NSFW removed)
 
 ## System Architecture - Anime Gamification
 
@@ -63,10 +63,20 @@ Device: Mobile only - requires simple step-by-step guidance with visual confirma
 ## Core Libraries
 - **discord.py**: Discord API wrapper
 - **discord.ui**: Button/View components
-- **flask**: Web server (keep-alive)
+- **flask**: Web server (keep-alive, port 5000)
+- **aiohttp**: Async HTTP client for keep-alive pings
+- **requests**: HTTP library for auto-ping
 - **yt-dlp**: YouTube video downloading
 - **python-dotenv**: Environment variables
+- **PyNaCl**: Voice channel support
 - **asyncio, random, logging**: Standard utilities
+
+## 24/7 Uptime System
+- **Flask Server**: Runs on port 5000 with endpoints `/ping`, `/health`, `/`
+- **Auto-ping Mechanism**: Pings keep-alive endpoint every 2 minutes
+- **Threading**: Dual-thread model (Flask + Discord bot)
+- **Fallback URLs**: Supports both Replit dev domain and Railway public domain
+- **Status Page**: HTML dashboard showing bot status and setup instructions
 
 ## Anime Characters Database (52+ total)
 - Naruto: Naruto, Sasuke, Kakashi
