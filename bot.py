@@ -2183,14 +2183,21 @@ async def check_partnerships(interaction: discord.Interaction):
         active_servers = []
         
         for partnership in partnerships[:20]:
-            has_mitsos_link = any(mitsos_code in partnership['content'] for mitsos_code in MITSOS_LINKS)
+            # Check if this message is marked as "Ενεργό" (Active) or "ΔΙΑΓΡΑΜΜΕΝΟ" (Deleted)
+            content_lower = partnership['content'].lower()
             
-            if has_mitsos_link:
-                active_servers.append(partnership)
-            else:
+            # If message contains one of mitsos's invite codes OR says "Ενεργό", it's active
+            has_mitsos_link = any(mitsos_code.lower() in content_lower for mitsos_code in MITSOS_LINKS)
+            has_active_marker = 'ενεργό' in content_lower or 'active' in content_lower
+            is_deleted_marker = 'διαγραμμένο' in content_lower or 'deleted' in content_lower or '✗' in content_lower or '❌' in content_lower
+            
+            # The logic: if marked as deleted by the partnership system, it's deleted
+            if is_deleted_marker or (not has_mitsos_link and not has_active_marker):
                 deleted_servers.append(partnership)
-            
-            status = "✅" if has_mitsos_link else "❌"
+                status = "❌"
+            else:
+                active_servers.append(partnership)
+                status = "✅"
             
             if len(report_embed.fields) < 10:
                 report_embed.add_field(
