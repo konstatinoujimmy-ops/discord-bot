@@ -2104,23 +2104,53 @@ async def raid(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Κανένας άλλος δεν έχει διαλέξει character ακόμα!", ephemeral=True)
         return
     
-    # Show raid options
+    # Show raid options with beautiful UI
+    attacker_data = anime_characters[guild.id][interaction.user.id]
+    attacker_char = ANIME_CHARACTERS[attacker_data['char_id']]
+    
+    # Sort defenders by power for ranking
+    defender_list = [(uid, anime_characters[guild.id][uid]['points']) for uid in defenders]
+    defender_list.sort(key=lambda x: x[1], reverse=True)
+    
+    rank_icons = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+    
     embed = discord.Embed(
-        title="⚔️ Raid Battle Menu",
-        description="Διάλεξε ποιον θέλεις να κάνεις raid:",
-        color=discord.Color.red()
+        title="⚔️ RAID BATTLE ARENA",
+        description=f"**Your Character:** {attacker_char['name']} ({attacker_data['points']} ⭐)\n\nΕπέλεξε το target σου:",
+        color=discord.Color.from_rgb(255, 0, 0)
     )
     
-    for defender_id in defenders[:5]:
+    embed.set_thumbnail(url="https://via.placeholder.com/200?text=⚔️+RAID")
+    
+    for rank, (defender_id, power) in enumerate(defender_list[:5]):
         defender_data = anime_characters[guild.id][defender_id]
         defender_char = ANIME_CHARACTERS[defender_data['char_id']]
         user = guild.get_member(defender_id)
         
+        rank_icon = rank_icons[rank]
+        username = user.mention if user else 'Unknown'
+        
+        # Power level bar (visual indicator)
+        max_power = max([d['points'] for d in anime_characters[guild.id].values()])
+        bar_length = int((power / max_power * 10)) if max_power > 0 else 0
+        power_bar = "█" * bar_length + "░" * (10 - bar_length)
+        
+        field_value = (
+            f"{rank_icon} **{defender_char['name']}**\n"
+            f"👤 Player: {username}\n"
+            f"📊 Power: **{power} ⭐**\n"
+            f"📈 {power_bar} [{power}/{max_power}]\n"
+            f"🎌 Series: *{defender_char['series']}*"
+        )
+        
         embed.add_field(
-            name=f"⚔️ {defender_char['name']}",
-            value=f"**Player:** {user.mention if user else 'Unknown'}\n**Power:** {defender_data['points']} ⭐",
+            name="▬▬▬▬▬▬▬▬▬",
+            value=field_value,
             inline=False
         )
+    
+    embed.set_footer(text="⏳ Cooldown: 2 minutes between raids | 🔄 Choose wisely!")
+    embed.color = discord.Color.from_rgb(180, 0, 0)
     
     view = RaidView(interaction.user.id, defenders)
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
