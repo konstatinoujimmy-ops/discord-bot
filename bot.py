@@ -1583,6 +1583,43 @@ class PartnershipView(discord.ui.View):
     async def submit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(PartnershipModal())
 
+@tree.command(name="add_infraction", description="➕ Προσθέστε manually παράβαση σε χρήστη (Owner only)")
+@app_commands.describe(user="Ο χρήστης", type="Τύπος παραβάσης (NSFW/TIMEOUT/MUTE/KICK/BAN)", reason="Λόγος")
+async def add_infraction(interaction: discord.Interaction, user: discord.User, type: str, reason: str):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Μόνο ο owner!", ephemeral=True)
+        return
+    
+    guild = interaction.guild
+    
+    # Επικύρωση τύπου
+    valid_types = ['NSFW', 'TIMEOUT', 'MUTE', 'KICK', 'BAN']
+    if type.upper() not in valid_types:
+        await interaction.response.send_message(f"❌ Έγκυρα είδη: {', '.join(valid_types)}", ephemeral=True)
+        return
+    
+    # Δημιουργία infrastructure αν χρειάζεται
+    if guild.id not in infractions_db:
+        infractions_db[guild.id] = {}
+    if user.id not in infractions_db[guild.id]:
+        infractions_db[guild.id][user.id] = []
+    
+    # Προσθήκη παράβασης
+    infractions_db[guild.id][user.id].append({
+        'type': type.upper(),
+        'date': datetime.now(timezone.utc),
+        'reason': reason
+    })
+    
+    embed = discord.Embed(
+        title="✅ Παράβαση Προστέθηκε",
+        description=f"**Χρήστης:** {user.mention}\n**Τύπος:** {type.upper()}\n**Λόγος:** {reason}",
+        color=discord.Color.green(),
+        timestamp=datetime.utcnow()
+    )
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 @tree.command(name="infractions", description="📋 Δες τις παραβάσεις ενός χρήστη")
 @app_commands.describe(user="Ο χρήστης που θέλεις να δεις τις παραβάσεις")
 async def infractions_command(interaction: discord.Interaction, user: discord.User):
