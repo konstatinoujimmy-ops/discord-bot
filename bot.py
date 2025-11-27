@@ -1141,20 +1141,39 @@ async def play(interaction: discord.Interaction, search: str):
             
             music_queues[interaction.guild.id].add(song_data)
             
-            embed = discord.Embed(
-                title="➕ Προστέθηκε",
-                description=f"**{song_data['title']}**",
-                color=discord.Color.green()
-            )
+            # Start playing if nothing is playing
+            if not voice_client.is_playing() and not voice_client.is_paused():
+                await play_next(interaction.guild)
+                # Wait for playback to start
+                for i in range(20):
+                    await asyncio.sleep(0.1)
+                    if voice_client.is_playing():
+                        break
             
-            if song_data['thumbnail']:
-                embed.set_thumbnail(url=song_data['thumbnail'])
-            
-            await interaction.followup.send(embed=embed)
-        
-        # Start playing if nothing is playing
-        if not voice_client.is_playing() and not voice_client.is_paused():
-            await play_next(interaction.guild)
+            # Show now playing menu
+            queue = music_queues[interaction.guild.id]
+            if queue.current:
+                embed = discord.Embed(
+                    title="🎵 Τώρα Παίζει",
+                    description=f"▶️ **{queue.current.get('title', 'Unknown')}**\n\n🔗 **Link**\nΆνοιγμα στο YouTube\n\n🎮 **Controls**\nΧρησιμοποιήστε τα buttons παρακάτω!\n\n↓ Απολάύστε τη μουσική!",
+                    color=discord.Color.green()
+                )
+                
+                if queue.current.get('thumbnail'):
+                    embed.set_thumbnail(url=queue.current['thumbnail'])
+                
+                view = PlayMenuView(interaction.guild.id, queue.current)
+                await interaction.followup.send(embed=embed, view=view)
+            else:
+                # Fallback
+                embed = discord.Embed(
+                    title="➕ Προστέθηκε",
+                    description=f"**{song_data['title']}**",
+                    color=discord.Color.green()
+                )
+                if song_data['thumbnail']:
+                    embed.set_thumbnail(url=song_data['thumbnail'])
+                await interaction.followup.send(embed=embed)
         
     except Exception as e:
         logger.error(f"Music play error: {e}")
