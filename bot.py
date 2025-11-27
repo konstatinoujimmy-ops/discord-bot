@@ -1048,40 +1048,42 @@ async def play(interaction: discord.Interaction, search: str):
 
     await interaction.response.defer()
 
-    try:
-        if not voice_client:
-            logger.info(f"Connecting to voice channel: {channel.name}")
-            voice_client = await asyncio.wait_for(
-                channel.connect(timeout=60.0, reconnect=True),
-                timeout=70.0
-            )
-            logger.info("Voice connection successful!")
-        elif voice_client.channel != channel:
-            await voice_client.move_to(channel)
-    except asyncio.TimeoutError:
-        await interaction.followup.send(
-            "❌ **Timeout Error**: Δεν μπόρεσα να συνδεθώ στο voice channel.\n"
-            "⚠️ **Το Replit έχει προβλήματα με Discord voice connections.**\n"
-            "💡 **Λύση**: Δοκίμασε να deploy το bot σε Bot-Hosting.net για 100% λειτουργία!",
-            ephemeral=True
-        )
-        return
-    except discord.ClientException as e:
-        await interaction.followup.send(
-            f"❌ **Voice Connection Error**: {str(e)}\n"
-            "⚠️ **Το Replit environment δεν υποστηρίζει πλήρως Discord voice.**\n"
-            "💡 **Λύση**: Deploy στο Bot-Hosting.net για σταθερή λειτουργία!",
-            ephemeral=True
-        )
-        logger.error(f"Voice connection error: {e}")
-        return
-    except Exception as e:
-        await interaction.followup.send(
-            f"❌ **Σφάλμα σύνδεσης**: {str(e)}",
-            ephemeral=True
-        )
-        logger.error(f"Unexpected voice error: {e}")
-        return
+    # Disconnect from old channel if needed
+    if voice_client and voice_client.channel != channel:
+        try:
+            await voice_client.disconnect(force=True)
+            await asyncio.sleep(0.5)
+        except:
+            pass
+        voice_client = None
+
+    # Try to connect with retry logic
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            if not voice_client:
+                logger.info(f"Connecting to voice channel: {channel.name} (Attempt {attempt+1}/{max_retries})")
+                voice_client = await asyncio.wait_for(
+                    channel.connect(timeout=30.0, reconnect=True),
+                    timeout=35.0
+                )
+                logger.info("Voice connection successful!")
+                break
+        except (asyncio.TimeoutError, discord.ClientException) as e:
+            logger.warning(f"Voice connection attempt {attempt+1} failed: {e}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(1)
+            else:
+                await interaction.followup.send(
+                    "❌ **Voice Connection Failed**: Δεν μπόρεσα να συνδεθώ μετά από αρκετές προσπάθειες.\n"
+                    "💡 **Πρόταση**: Δοκίμασε πάλι ή δοκίμασε άλλο κανάλι.",
+                    ephemeral=True
+                )
+                return
+        except Exception as e:
+            logger.error(f"Unexpected voice error: {e}")
+            await interaction.followup.send(f"❌ **Σφάλμα**: {str(e)[:100]}", ephemeral=True)
+            return
 
     if interaction.guild.id not in music_queues:
         music_queues[interaction.guild.id] = MusicQueue()
