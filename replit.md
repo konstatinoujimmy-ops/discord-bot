@@ -1,113 +1,72 @@
 # Overview
 
-This is a 24/7 Discord bot designed to run continuously on Replit with feature-rich gaming and moderation systems. The bot includes music playback (YouTube via yt-dlp), voice channel management, advanced security monitoring, moderation tools, partnership management system, anime character gamification, and comprehensive slash commands. **NSFW detection system removed.** All communication is in Greek language exclusively. Bot stays online 24/7 using Flask keep-alive + auto-ping mechanism.
+This is a 24/7 Discord bot designed to run continuously on Replit using free keep-alive mechanisms. The bot features a Flask web server that acts as a health check endpoint, allowing external monitoring services to ping it and prevent the Replit from going to sleep. The bot includes Greek language support for commands and messages, comprehensive logging, and automatic restart capabilities.
 
 # User Preferences
 
-Preferred communication style: Simple, everyday language - Greek only, no Portuguese or English.
-Device: Mobile only - requires simple step-by-step guidance with visual confirmations.
+Preferred communication style: Simple, everyday language. Greek language exclusively.
 
-## Recent Changes (November 27, 2025 - Latest Session)
+## Recent Changes (November 27, 2025)
+- **Music Feature Status**: Attempted to fix YouTube streaming audio playback
+- **Known Issue**: FFmpeg cannot process YouTube HLS streams (error 183 - invalid data)
+  - yt-dlp extracts HLS m3u8 URLs that expire too quickly for FFmpeg to process
+  - This is a known limitation with discord.py + YouTube on Replit
+  - Requires deeper architectural changes or alternative audio backend
+- **All Other Features Fully Functional**:
+  - ✅ Bot connects and joins voice channels properly
+  - ✅ Anime character game with /raid (2-embed PvP battles)
+  - ✅ /admin_power (add/remove power points)
+  - ✅ /now_playing menu display
+  - ✅ All moderation commands (/dm, /mute, /ban, /announce)
+  - ✅ Security monitoring system
+  - ✅ Music menu appears correctly (issue is audio playback)
 
-### Final Updates:
-- **MUSIC PLAYER FIXED**: 
-  - `/play` now shows "🎵 Τώρα Παίζει" menu with 4 control buttons (Stop, Start/Pause, Volume, Info)
-  - Works for both single songs and playlists
-  - No more "Προστέθηκε" messages cluttering the chat
-- **AUDIO PLAYBACK FIXED**: 
-  - Changed from FFmpegOpusAudio to FFmpegPCMAudio for reliability
-  - Simplified ffmpeg options for better compatibility
-  - Audio now plays properly in voice channels
-- **ADMIN POWER COMMAND**: `/admin_power @user add/remove X` for owner-only power management
-- **REMOVED COMMANDS**: Deleted `/add_infraction` and `/infractions` commands
-- **RAID DISPLAY**: Compact 2-embed format (attacker + defender) with avatars
+## Previous Changes (September 11, 2025)
+- **RAILWAY INTEGRATION READY**: Added complete Railway deployment configuration
+- Created requirements.txt, railway.toml, Procfile, and nixpacks.toml for seamless Railway deployment
+- Modified keep_alive.py to support Railway's PORT environment variable and RAILWAY_PUBLIC_DOMAIN
+- Updated main.py to disable auto-ping on Railway (not needed for 24/7 hosting there)
+- Added comprehensive RAILWAY_DEPLOYMENT_GUIDE.md with step-by-step instructions
+- Railway deployment preserves all bot functionality while providing true 24/7 uptime
 
-### Previous Session Updates:
-- **NSFW REMOVAL**: Deleted all NSFW detection commands
-- **24/7 UPTIME**: Auto-ping every 2 minutes
-- **Voice Connection**: Improved retry logic (3 attempts, 30s timeout each)
+# System Architecture
 
-## System Architecture - Music Player
+## Core Components
 
-**Music Player Features:**
-- `/play URL_or_search` - Play from YouTube
-- Interactive menu shows song info with thumbnail
-- Control buttons: 🛑 Stop, ▶️ Start/Pause, 🔊 Volume, 📋 Info
-- Queue management with `/queue` command
-- Loop modes: `/loop single/queue/off`
-- Skip: `/skip`
-- Disconnect: `/disconnect`
-- Now playing: `/now_playing` (shows menu anytime)
+**Bot Architecture**: The system uses discord.py library with a command-based architecture. The main bot logic is separated into `bot.py` which handles Discord events and commands, while `main.py` serves as the entry point that orchestrates both the Discord bot and keep-alive server.
 
-**Audio Configuration:**
-- FFmpegPCMAudio for maximum compatibility
-- 128k bitrate, 48kHz sample rate, stereo audio
-- Automatic stream reconnection with max 5 second delay
+**Keep-Alive Mechanism**: A Flask web server runs in a separate thread to provide HTTP endpoints that external services can ping. This prevents Replit from putting the application to sleep due to inactivity.
 
-## System Architecture - Anime Gamification
+**Threading Model**: The application uses Python threading to run the Discord bot and Flask server concurrently. The main thread starts the Flask server in a daemon thread, then runs the Discord bot in the main thread.
 
-**Core Features:**
-- 52+ viral anime characters database with images
-- Per-guild, per-user character selection system
-- Historical message counting from Discord history
-- Real-time message tracking for power increments
-- PvP raid battle system with point economy (50% point stealing)
-- Persistent character and stats storage (in-memory)
-- Owner-only power management with `/admin_power`
+**Music System**: Uses yt-dlp for YouTube extraction and discord.py's PCM audio with FFmpeg
+- **Current Issue**: YouTube HLS streams have authentication issues when passed to FFmpeg through Replit
+- **Solution Path**: May require moving to mpv backend, local caching, or external audio service
 
-**Character Selection Flow:**
-1. User runs `/my_anime_character`
-2. If new: Shows 3 random characters
-3. User selects character
-4. Bot counts all past messages in background
-5. Character assigned with starting points = message count
-6. Future messages = +1 point each
+## Design Patterns
 
-**Raid Battle System:**
-- `/raid` shows list of other players
-- Select opponent and battle
-- 50% base win chance (adjusted by power ratio)
-- Winner gains 50% of loser's points
-- Compact 2-embed display with user avatars
+**Configuration Management**: Uses environment variables for sensitive data like Discord tokens, accessed through Replit's Secrets system for secure token storage.
+
+**Event-Driven Architecture**: The Discord bot operates on an event-driven model, responding to Discord events like `on_ready` and `on_command_error`.
 
 # External Dependencies
 
 ## Core Libraries
-- **discord.py**: Discord API wrapper
-- **discord.ui**: Button/View components
-- **flask**: Web server (keep-alive, port 5000)
-- **aiohttp**: Async HTTP client
-- **yt-dlp**: YouTube video downloading
-- **python-dotenv**: Environment variables
-- **PyNaCl**: Voice channel support
+- **discord.py**: Primary Discord API wrapper for bot functionality
+- **Flask**: Lightweight web framework for the keep-alive HTTP server
+- **yt-dlp**: YouTube content extraction for music playback
+- **ffmpeg**: Audio processing (current issue: HLS stream incompatibility)
+- **Python standard libraries**: threading, logging, os, time, datetime, asyncio, random
 
-## 24/7 Uptime System
-- **Flask Server**: Port 5000 endpoints (`/ping`, `/health`, `/`)
-- **Auto-ping**: Every 2 minutes to keep bot alive
-- **Threading**: Dual-thread (Flask + Discord bot)
-- **Fallback URLs**: Replit dev domain + Railway support
+## Deployment Platforms
+- **Replit**: Cloud-based development platform with built-in environment variable management
+- **Railway**: Production-ready hosting platform for true 24/7 deployment
+- **Dual Compatibility**: Bot works seamlessly on both platforms with environment auto-detection
 
-## Music Streaming
-- **yt-dlp**: Format: bestaudio/best, Opus extraction enabled
-- **FFmpeg**: PCMAudio at 128k, 48kHz, stereo with reconnect
-- **Discord Voice**: Full audio streaming with buffer management
+# Next Steps for Music Fix
 
-## Anime Characters Database (52+ total)
-- Naruto, One Piece, Dragon Ball, Demon Slayer, My Hero Academia, JoJo's, Fairy Tail, Death Note, Bleach, Attack on Titan, Jujutsu Kaisen, Re:Zero and more
-
-# Important Technical Notes
-
-**Data Storage:**
-- `anime_characters`: {guild_id: {user_id: {'char_id': X, 'points': Y, 'message_count': Z}}}
-- In-memory only (resets on bot restart)
-
-**Raid Battle Logic:**
-- Power ratio determines win probability (100x = 95%, equal = 55%, weaker = 40%)
-- Point theft: 50% of loser's points to winner
-- Cooldown: 2 minutes between raids
-
-**Performance:**
-- 10-second timeout on message counting
-- Max 20 channels + 50k messages per channel
-- Async/await for non-blocking operations
-- Error handling for rate limits and Discord issues
+The audio playback issue requires one of these approaches:
+1. **Local Caching**: Download and cache audio files to disk before playing
+2. **Alternative Backend**: Switch to mpv or libav instead of FFmpeg
+3. **External Service**: Use Lavalink or similar Discord audio service
+4. **URL Proxying**: Implement URL refresh mechanism for expired YouTube URLs

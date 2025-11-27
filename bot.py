@@ -125,7 +125,7 @@ def parse_duration(duration_str: str) -> int:
         return int(duration_str)
 
 ytdl_format_options = {
-    'format': '140/251/250/249/bestaudio[ext=m4a]/bestaudio',
+    'format': 'worstaudio/worst',
     'quiet': True,
     'no_warnings': True,
     'default_search': 'ytsearch',
@@ -133,13 +133,12 @@ ytdl_format_options = {
     'ignoreerrors': False,
     'nocheckcertificate': True,
     'no_color': True,
-    'postprocessor_args': [],
-    'skip_unavailable_fragments': True,
+    'noplaylist': True,
 }
 
 ffmpeg_options = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin -headers "User-Agent: Mozilla/5.0" -hide_banner',
-    'options': '-vn -acodec libopus -ab 96k -ar 48000 -ac 2'
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
+    'options': '-vn -q:a 9 -ar 48000 -ac 2'
 }
 
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
