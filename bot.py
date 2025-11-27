@@ -1945,35 +1945,29 @@ class AnimeCharacterView(discord.ui.View):
             await interaction.response.send_message("❌ Αυτό δεν είναι για σένα!", ephemeral=True)
             return
         
-        # Defer response because counting takes time
-        await interaction.response.defer()
-        
         char_id = int(interaction.data['custom_id'].replace('anime_select_', ''))
         char = ANIME_CHARACTERS[char_id]
         guild = interaction.guild
         
-        # Count all historical messages from this user
-        message_count = await count_user_messages(guild, interaction.user)
-        
-        # Αποθήκευση character with historical message count
+        # Αποθήκευση character
         if guild.id not in anime_characters:
             anime_characters[guild.id] = {}
         
         anime_characters[guild.id][interaction.user.id] = {
             'char_id': char_id,
-            'points': message_count,
-            'message_count': message_count
+            'points': 0,
+            'message_count': 0
         }
         
         embed = discord.Embed(
             title=f"🎌 Επέλεξες: {char['name']}!",
-            description=f"**Series:** {char['series']}\n**Points:** {message_count} ⭐\n**Power Level:** {int(message_count * 0.5)}%",
+            description=f"**Series:** {char['series']}\n**Points:** 0 ⭐\n**Power Level:** 0%",
             color=discord.Color.purple()
         )
         embed.set_image(url=char['image'])
-        embed.set_footer(text=f"Ξεκίνησες με {message_count} points από τα παλιά σου μηνύματα! Νέα = +1 Power")
+        embed.set_footer(text="Κάθε μήνυμα = +1 Power! 💪")
         
-        await interaction.followup.send(embed=embed)
+        await interaction.response.edit_message(embed=embed, view=None)
 
 class RaidView(discord.ui.View):
     def __init__(self, attacker_id, defenders):
