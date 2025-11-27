@@ -2170,6 +2170,101 @@ async def raid(interaction: discord.Interaction):
     view = RaidView(interaction.user.id, defenders)
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+@tree.command(name="recall_members", description="📢 Στείλε DM σε members που έφυγαν τις τελευταίες 30 μέρες")
+async def recall_members(interaction: discord.Interaction):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Μόνο ο owner μπορεί να το χρησιμοποιήσει!", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    guild = interaction.guild
+    
+    # Check permissions
+    if not guild.me.guild_permissions.view_audit_log:
+        await interaction.followup.send("❌ Ο bot δεν έχει AUDIT_LOG permissions!", ephemeral=True)
+        return
+    
+    try:
+        # Get members who left in the last 30 days from audit logs
+        left_members = []
+        cutoff_time = datetime.now(timezone.utc) - timedelta(days=30)
+        
+        async for entry in guild.audit_logs(action=discord.AuditLogAction.member_remove, limit=500):
+            if entry.created_at > cutoff_time:
+                left_members.append(entry.target)
+        
+        if not left_members:
+            await interaction.followup.send("✅ Κανένας δεν έχει φύγει τις τελευταίες 30 μέρες!", ephemeral=True)
+            return
+        
+        # Send DMs to all left members
+        server_link = "https://discord.gg/JtyjMmZ5n"
+        sent_count = 0
+        failed_count = 0
+        
+        for member in left_members:
+            try:
+                dm_embed = discord.Embed(
+                    title="👋 Σας έχουμε ξεχάσει! 🎮",
+                    description=f"Καλησπέρα **{member.name}**!\n\nΠαρατήρησαν ότι δεν είστε παραπάνω στον server μας...",
+                    color=discord.Color.blue()
+                )
+                
+                dm_embed.add_field(
+                    name="💙 Θέλουμε να ξανάρθείτε!",
+                    value=f"Αν θέλετε να ξανάμπείτε στη παρέα μας, κάντε κλικ στο link:",
+                    inline=False
+                )
+                
+                dm_embed.add_field(
+                    name="🔗 Server Link",
+                    value=f"[Κάντε κλικ εδώ για να ξανάμπείτε]({server_link})",
+                    inline=False
+                )
+                
+                dm_embed.set_footer(text=f"Server: {guild.name} | Αν έχετε απορίες, DM το owner!")
+                dm_embed.color = discord.Color.from_rgb(0, 150, 255)
+                
+                await member.send(embed=dm_embed)
+                sent_count += 1
+            except:
+                failed_count += 1
+        
+        # Summary report
+        report_embed = discord.Embed(
+            title="📢 Recall Members Report",
+            description=f"DM sent σε members που έφυγαν τις τελευταίες 30 μέρες",
+            color=discord.Color.green()
+        )
+        
+        report_embed.add_field(
+            name="✅ Επιτυχής",
+            value=f"**{sent_count}** DMs απεστάλησαν",
+            inline=True
+        )
+        
+        report_embed.add_field(
+            name="❌ Αποτυχία",
+            value=f"**{failed_count}** DMs απέτυχαν",
+            inline=True
+        )
+        
+        report_embed.add_field(
+            name="📊 Σύνολο",
+            value=f"**{len(left_members)}** members",
+            inline=True
+        )
+        
+        report_embed.set_footer(text=f"Server Link: {server_link}")
+        
+        await interaction.followup.send(embed=report_embed, ephemeral=True)
+        logger.info(f"Recall members: Sent {sent_count}/{len(left_members)} DMs")
+        
+    except Exception as e:
+        logger.error(f"Error recalling members: {e}")
+        await interaction.followup.send(f"❌ Σφάλμα: {str(e)[:100]}", ephemeral=True)
+
 @tree.command(name="check_partnerships", description="📊 Μέτρησε πόσα server links υπάρχουν στο partnership channel")
 async def check_partnerships(interaction: discord.Interaction):
     # Check if user is owner or has zeno role
