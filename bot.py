@@ -63,6 +63,7 @@ security_tracker = {
 
 active_giveaways = {}
 nsfw_violations = {}  # {guild_id: {user_id: {'count': X, 'last_violation': timestamp, 'user': user_obj}}}
+infractions_db = {}  # {guild_id: {user_id: [{'type': 'NSFW'|'TIMEOUT'|'MUTE'|'KICK'|'BAN', 'date': timestamp, 'reason': str}]}}
 
 def parse_duration(duration_str: str) -> int:
     """
@@ -1582,6 +1583,44 @@ class PartnershipView(discord.ui.View):
     async def submit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(PartnershipModal())
 
+@tree.command(name="infractions", description="📋 Δες τις παραβάσεις ενός χρήστη")
+@app_commands.describe(user="Ο χρήστης που θέλεις να δεις τις παραβάσεις")
+async def infractions_command(interaction: discord.Interaction, user: discord.User):
+    guild = interaction.guild
+    
+    if guild.id not in infractions_db or user.id not in infractions_db[guild.id]:
+        await interaction.response.send_message(f"✅ Ο **{user.name}** δεν έχει παραβάσεις!", ephemeral=True)
+        return
+    
+    violations = infractions_db[guild.id][user.id]
+    
+    embed = discord.Embed(
+        title=f"📋 Ιστορικό Παραβάσεων - {user.name}",
+        description=f"**Σύνολο Παραβάσεων:** {len(violations)}",
+        color=discord.Color.orange(),
+        timestamp=datetime.utcnow()
+    )
+    
+    # Δείξε τις τελευταίες 10 παραβάσεις
+    for i, infraction in enumerate(violations[-10:], 1):
+        emoji_map = {
+            'NSFW': '🔞',
+            'TIMEOUT': '⏱️',
+            'MUTE': '🔇',
+            'KICK': '🚪',
+            'BAN': '🔨'
+        }
+        emoji = emoji_map.get(infraction['type'], '📌')
+        
+        embed.add_field(
+            name=f"{emoji} {i}. {infraction['type']}",
+            value=f"**Λόγος:** {infraction['reason']}\n**Ημερομηνία:** <t:{int(infraction['date'].timestamp())}:R>",
+            inline=False
+        )
+    
+    embed.set_footer(text=f"Δείχνοντας τις τελευταίες 10 | Total: {len(violations)}")
+    await interaction.response.send_message(embed=embed)
+
 @tree.command(name="nsfw", description="🔍 Προβολή και ενεργοποίηση timeout για NSFW παραβιάσεις των τελευταίων 3 ημερών")
 async def nsfw_enforcement(interaction: discord.Interaction):
     if interaction.user.id != OWNER_ID:
@@ -1743,6 +1782,18 @@ async def on_message(message):
                         
                         nsfw_violations[message.guild.id][message.author.id]['count'] += 1
                         nsfw_violations[message.guild.id][message.author.id]['last_violation'] = datetime.now(timezone.utc)
+                        
+                        # Record infraction
+                        if message.guild.id not in infractions_db:
+                            infractions_db[message.guild.id] = {}
+                        if message.author.id not in infractions_db[message.guild.id]:
+                            infractions_db[message.guild.id][message.author.id] = []
+                        
+                        infractions_db[message.guild.id][message.author.id].append({
+                            'type': 'NSFW',
+                            'date': datetime.now(timezone.utc),
+                            'reason': 'NSFW Content'
+                        })
                         
                         try:
                             await message.author.timeout(timeout_until, reason="NSFW Content Detection")
