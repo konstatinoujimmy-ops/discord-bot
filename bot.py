@@ -88,6 +88,9 @@ def load_anime_data():
                     anime_characters[guild_id] = {}
                     for user_id_str, char_data in users.items():
                         user_id = int(user_id_str)
+                        # Ensure all required fields exist
+                        if 'last_raid_time' not in char_data:
+                            char_data['last_raid_time'] = 0
                         anime_characters[guild_id][user_id] = char_data
                 logger.info(f"✅ Loaded anime data for {sum(len(v) for v in anime_characters.values())} users")
         else:
@@ -2017,7 +2020,8 @@ class AnimeCharacterView(discord.ui.View):
             anime_characters[guild.id][user.id] = {
                 'char_id': char_id,
                 'points': 0,
-                'message_count': 0
+                'message_count': 0,
+                'last_raid_time': 0
             }
             
             # Send immediate response with loading state
@@ -2134,6 +2138,28 @@ class RaidView(discord.ui.View):
         
         attacker_data = anime_characters[guild.id][interaction.user.id]
         defender_data = anime_characters[guild.id][defender_id]
+        
+        # Check cooldown (2 minutes = 120 seconds)
+        RAID_COOLDOWN = 120
+        current_time = datetime.now(timezone.utc).timestamp()
+        last_raid_time = attacker_data.get('last_raid_time', 0)
+        time_since_raid = current_time - last_raid_time
+        
+        if time_since_raid < RAID_COOLDOWN:
+            remaining_time = RAID_COOLDOWN - int(time_since_raid)
+            minutes = remaining_time // 60
+            seconds = remaining_time % 60
+            
+            cooldown_embed = discord.Embed(
+                title="⏳ Cooldown Active",
+                description=f"Πρέπει να περιμένεις **{minutes}m {seconds}s** πριν κάνεις ξανά raid! 🕐",
+                color=discord.Color.orange()
+            )
+            await interaction.response.edit_message(embed=cooldown_embed, view=None)
+            return
+        
+        # Update last raid time
+        attacker_data['last_raid_time'] = current_time
         
         attacker_power = attacker_data['points']
         defender_power = defender_data['points']
