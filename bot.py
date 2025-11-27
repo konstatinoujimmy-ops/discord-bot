@@ -2215,9 +2215,9 @@ async def recall_members(interaction: discord.Interaction):
         if 'recalled' not in recall_tracking:
             recall_tracking['recalled'] = []
         
-        # Get members who left in the last 30 days from audit logs
+        # Get members who left in the last 365 days from audit logs
         left_members = []
-        cutoff_time = datetime.now(timezone.utc) - timedelta(days=30)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(days=365)
         
         async for entry in guild.audit_logs(action=discord.AuditLogAction.member_remove, limit=500):
             if entry.created_at > cutoff_time:
