@@ -1630,6 +1630,12 @@ async def add_infraction(interaction: discord.Interaction, user: discord.User, t
 async def infractions_command(interaction: discord.Interaction, user: discord.User):
     guild = interaction.guild
     
+    # Debug logging
+    logger.info(f"📋 Infractions check - User: {user.name} ({user.id}), Guild: {guild.name} ({guild.id})")
+    logger.info(f"infractions_db keys: {list(infractions_db.keys())}")
+    if guild.id in infractions_db:
+        logger.info(f"Guild users: {list(infractions_db[guild.id].keys())}")
+    
     if guild.id not in infractions_db or user.id not in infractions_db[guild.id]:
         await interaction.response.send_message(f"✅ Ο **{user.name}** δεν έχει παραβάσεις!", ephemeral=True)
         return
@@ -1662,6 +1668,7 @@ async def infractions_command(interaction: discord.Interaction, user: discord.Us
     
     embed.set_footer(text=f"Δείχνοντας τις τελευταίες 10 | Total: {len(violations)}")
     await interaction.response.send_message(embed=embed)
+    logger.info(f"✅ Sent {len(violations)} infractions for {user.name}")
 
 @tree.command(name="nsfw", description="🔍 Προβολή και ενεργοποίηση timeout για NSFW παραβιάσεις των τελευταίων 3 ημερών")
 async def nsfw_enforcement(interaction: discord.Interaction):
