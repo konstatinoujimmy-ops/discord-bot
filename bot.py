@@ -2152,101 +2152,62 @@ async def check_partnerships(interaction: discord.Interaction):
             await interaction.followup.send("❌ Δεν βρέθηκε το partnership channel!", ephemeral=True)
             return
         
-        # Collect all partnership messages with links and extract invite codes
-        import re
-        partnerships = []
-        async for message in partnership_channel.history(limit=300):
+        # Parse the partnership summary message to find deleted servers
+        deleted_servers_list = []
+        
+        async for message in partnership_channel.history(limit=100):
             content = message.content
-            if 'discord.gg/' in content or 'discord.com/invite/' in content:
-                # Extract invite codes
-                invite_codes = re.findall(r'discord\.gg/(\w+)', content)
-                partnerships.append({
-                    'author': message.author.name if message.author else 'Unknown',
-                    'content': content,
-                    'timestamp': message.created_at,
-                    'invite_codes': invite_codes
-                })
-        
-        if not partnerships:
-            await interaction.followup.send("❌ Δεν βρέθηκαν partnership links!", ephemeral=True)
-            return
-        
-        # Create report
-        report_embed = discord.Embed(
-            title="🔍 Cross-Server Partnership Verification",
-            description=f"⏳ Ελέγχω {len(partnerships)} partnerships σε εξωτερικά servers...",
-            color=discord.Color.blurple(),
-            timestamp=datetime.now()
-        )
-        
-        deleted_servers = []
-        active_servers = []
-        
-        for partnership in partnerships[:20]:
-            content_lower = partnership['content'].lower()
-            has_mitsos_link = any(link.lower() in content_lower for link in MITSOS_LINKS)
-            server_name = partnership['author']
             
-            # Try to check each external server if bot is there
-            found_link_in_external_server = False
-            for invite_code in partnership.get('invite_codes', [])[:1]:  # Check first invite
-                try:
-                    # Try to get invite info
-                    invite = await bot.fetch_invite(invite_code, with_counts=True)
-                    external_guild = invite.guild
+            # Look for the summary message with deleted servers
+            if "ΔΙΑΓΡΑΜΜΕΝΑ" in content and "Servers που αφαίρεσαν" in content:
+                # Extract server names from the list
+                lines = content.split('\n')
+                in_deleted_section = False
+                
+                for line in lines:
+                    if "Servers που αφαίρεσαν" in line or "servers που διέγραψαν" in line.lower():
+                        in_deleted_section = True
+                        continue
                     
-                    if external_guild:
-                        # Check if bot is in this guild
-                        try:
-                            guild_obj = bot.get_guild(external_guild.id)
-                            if guild_obj:
-                                # Bot is in this guild - check channels for mitsos link
-                                for channel in guild_obj.text_channels[:5]:  # Check first 5 text channels
-                                    try:
-                                        async for msg in channel.history(limit=50):
-                                            if any(link in msg.content for link in MITSOS_LINKS):
-                                                found_link_in_external_server = True
-                                                break
-                                    except:
-                                        pass
-                                    if found_link_in_external_server:
-                                        break
-                        except:
-                            pass
-                except:
-                    pass
+                    if in_deleted_section and line.strip().startswith('*'):
+                        server_name = line.strip().lstrip('* ').strip()
+                        if server_name and server_name not in deleted_servers_list:
+                            deleted_servers_list.append(server_name)
+        
+        # If we found the summary, use it
+        if deleted_servers_list:
+            report_embed = discord.Embed(
+                title="🔍 Partnership Verification Report",
+                description=f"Servers που έχουν διαγράψει το link σας",
+                color=discord.Color.red(),
+                timestamp=datetime.now()
+            )
             
-            # Final logic: active if link exists locally OR found in external server
-            if has_mitsos_link or found_link_in_external_server:
-                active_servers.append(partnership)
-                status = "✅"
-            else:
-                deleted_servers.append(partnership)
-                status = "❌"
-            
-            # Δείχνε τα πρώτα 12
-            if len(report_embed.fields) < 12:
+            # Add deleted servers
+            if deleted_servers_list:
+                # Count occurrences
+                server_counts = {}
+                for server in deleted_servers_list:
+                    server_counts[server] = server_counts.get(server, 0) + 1
+                
+                deleted_text = "\n".join([f"❌ {name} ({count}x)" for name, count in sorted(server_counts.items(), key=lambda x: x[1], reverse=True)])
                 report_embed.add_field(
-                    name=f"{status} {server_name[:25]}",
-                    value=f"📅 {partnership['timestamp'].strftime('%d/%m/%Y')}",
-                    inline=True
+                    name="⚠️ ΔΙΑΓΡΑΜΜΕΝΑ Links",
+                    value=deleted_text,
+                    inline=False
                 )
-        
-        # Summary
-        summary = f"✅ **Ενεργά:** {len(active_servers)}\n❌ **Διαγραμμένα:** {len(deleted_servers)}\n📋 **Σύνολο:** {len(partnerships[:20])}"
-        report_embed.add_field(name="📊 Σύνοψη", value=summary, inline=False)
-        
-        # List deleted servers
-        if deleted_servers:
-            deleted_list = "\n".join([f"• {s['author']}" for s in deleted_servers[:10]])
+            
+            # Summary stats
             report_embed.add_field(
-                name="⚠️ ΔΙΑΓΡΑΜΜΕΝΑ - Servers που αφαίρεσαν το link σας",
-                value=deleted_list,
+                name="📊 Σύνοψη",
+                value=f"**Σύνολο Διαγραμμένων:** {len(deleted_servers_list)}\n**Μοναδικά Servers:** {len(set(deleted_servers_list))}",
                 inline=False
             )
-        
-        await interaction.followup.send(embed=report_embed, ephemeral=True)
-        logger.info(f"Partnership check: {len(active_servers)} active, {len(deleted_servers)} deleted")
+            
+            await interaction.followup.send(embed=report_embed, ephemeral=True)
+            logger.info(f"Partnership check: Found {len(deleted_servers_list)} deleted entries")
+        else:
+            await interaction.followup.send("✅ Δεν βρέθηκαν διαγραμμένα links! Όλα είναι ενεργά!", ephemeral=True)
         
     except Exception as e:
         logger.error(f"Error checking partnerships: {e}")
