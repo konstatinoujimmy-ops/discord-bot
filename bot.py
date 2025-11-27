@@ -62,6 +62,7 @@ security_tracker = {
 }
 
 active_giveaways = {}
+nsfw_violations = {}  # {guild_id: {user_id: {'count': X, 'last_violation': timestamp, 'user': user_obj}}}
 
 def parse_duration(duration_str: str) -> int:
     """
@@ -1353,6 +1354,55 @@ async def on_presence_update(before, after):
     except Exception as e:
         logger.error(f"Error in presence update: {e}")
 
+class NSFWEnforcementView(discord.ui.View):
+    def __init__(self, violations_list, guild):
+        super().__init__(timeout=None)
+        self.violations_list = violations_list
+        self.guild = guild
+        self.selected_users = []
+
+    @discord.ui.select(
+        placeholder="Επιλογή χρηστών για timeout...",
+        min_values=0,
+        max_values=25,
+        custom_id="nsfw_select_users"
+    )
+    async def select_users(self, interaction: discord.Interaction, select: discord.ui.Select):
+        self.selected_users = select.values
+        await interaction.response.defer()
+
+    @discord.ui.button(label="✅ Εφαρμογή Timeout (1 λεπτό)", style=discord.ButtonStyle.green, custom_id="nsfw_apply_timeout")
+    async def apply_timeout(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != OWNER_ID:
+            await interaction.response.send_message("❌ Μόνο ο owner!", ephemeral=True)
+            return
+
+        await interaction.response.defer()
+        
+        timeout_applied = 0
+        failed = 0
+        
+        for user_id_str in self.selected_users:
+            try:
+                member = await self.guild.fetch_member(int(user_id_str))
+                timeout_duration = timedelta(minutes=1)
+                timeout_until = datetime.now(timezone.utc) + timeout_duration
+                
+                await member.timeout(timeout_until, reason="NSFW Content Violation")
+                timeout_applied += 1
+            except Exception as e:
+                failed += 1
+                logger.error(f"Error timeout user {user_id_str}: {e}")
+        
+        embed = discord.Embed(
+            title="✅ Timeout Εφαρμόστηκε",
+            description=f"**Επιτυχής:** {timeout_applied}\n**Αποτυχία:** {failed}",
+            color=discord.Color.green(),
+            timestamp=datetime.utcnow()
+        )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
 class PartnershipModal(discord.ui.Modal, title="📧 Partnership Submission"):
     server_link = discord.ui.TextInput(label="Server Link", placeholder="discord.gg/...", min_length=5, max_length=100)
     
@@ -1495,6 +1545,66 @@ class PartnershipView(discord.ui.View):
     async def submit_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_modal(PartnershipModal())
 
+@tree.command(name="nsfw", description="🔍 Προβολή και ενεργοποίηση timeout για NSFW παραβιάσεις των τελευταίων 3 ημερών")
+async def nsfw_enforcement(interaction: discord.Interaction):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Μόνο ο owner!", ephemeral=True)
+        return
+    
+    guild = interaction.guild
+    three_days_ago = datetime.now(timezone.utc) - timedelta(days=3)
+    
+    # Συλλογή παραβιάσεων των τελευταίων 3 ημερών
+    violations_in_period = []
+    
+    if guild.id in nsfw_violations:
+        for user_id, violation_data in nsfw_violations[guild.id].items():
+            if violation_data['last_violation'] >= three_days_ago:
+                violations_in_period.append({
+                    'user_id': str(user_id),
+                    'user': violation_data['user'],
+                    'count': violation_data['count'],
+                    'last_violation': violation_data['last_violation']
+                })
+    
+    if not violations_in_period:
+        await interaction.response.send_message("✅ Δεν υπάρχουν NSFW παραβιάσεις στις τελευταίες 3 ημέρες!", ephemeral=True)
+        return
+    
+    # Δημιουργία select menu options
+    options = []
+    for violation in violations_in_period:
+        label = f"{violation['user'].name} - {violation['count']} παραβιάσεις"
+        options.append(discord.SelectOption(
+            label=label[:100],  # Discord limit
+            value=violation['user_id'],
+            description=f"Τελευταία: {violation['last_violation'].strftime('%d/%m %H:%M')}"
+        ))
+    
+    # Δημιουργία view με select menu
+    view = NSFWEnforcementView(violations_in_period, guild)
+    
+    # Αντικατάσταση του select menu με τις σωστές options
+    for item in view.children:
+        if isinstance(item, discord.ui.Select) and item.custom_id == "nsfw_select_users":
+            item.options = options
+    
+    embed = discord.Embed(
+        title="🔍 NSFW Παραβιάσεις - Τελευταίες 3 Ημέρες",
+        description=f"**Σύνολο:** {len(violations_in_period)} χρήστες\n\nΕπιλέξτε χρήστες για timeout 1 λεπτού:",
+        color=discord.Color.orange(),
+        timestamp=datetime.utcnow()
+    )
+    
+    for violation in violations_in_period[:10]:  # Εμφάνιση πρώτων 10
+        embed.add_field(
+            name=f"👤 {violation['user'].name}",
+            value=f"Παραβιάσεις: **{violation['count']}**\nΤελευταία: <t:{int(violation['last_violation'].timestamp())}:R>",
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
 @tree.command(name="partnership", description="🤝 Υποβολή Partnership Αίτησης")
 async def partnership(interaction: discord.Interaction):
     # Check if user has the required role (1162022515846172723)
@@ -1582,6 +1692,20 @@ async def on_message(message):
                         # Timeout the user for 10 minutes
                         timeout_duration = timedelta(minutes=10)
                         timeout_until = datetime.now(timezone.utc) + timeout_duration
+                        
+                        # Record NSFW violation
+                        if message.guild.id not in nsfw_violations:
+                            nsfw_violations[message.guild.id] = {}
+                        
+                        if message.author.id not in nsfw_violations[message.guild.id]:
+                            nsfw_violations[message.guild.id][message.author.id] = {
+                                'count': 0,
+                                'last_violation': datetime.now(timezone.utc),
+                                'user': message.author
+                            }
+                        
+                        nsfw_violations[message.guild.id][message.author.id]['count'] += 1
+                        nsfw_violations[message.guild.id][message.author.id]['last_violation'] = datetime.now(timezone.utc)
                         
                         try:
                             await message.author.timeout(timeout_until, reason="NSFW Content Detection")
