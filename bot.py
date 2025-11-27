@@ -1971,20 +1971,32 @@ class AnimeCharacterView(discord.ui.View):
         
         await interaction.response.edit_message(embed=embed, view=None)
         
-        # Count messages in background
+        # Count messages in background - SIMPLE & FAST
         message_count = 0
-        try:
-            for channel in guild.text_channels[:20]:  # Max 20 channels to avoid rate limit
-                try:
-                    if not channel.permissions_for(guild.me).read_message_history:
-                        continue
-                    async for msg in channel.history(limit=50000):
-                        if msg.author.id == user.id:
-                            message_count += 1
-                except:
+        channels_checked = 0
+        
+        for channel in guild.text_channels:
+            if channels_checked >= 10:  # Limit to 10 channels max
+                break
+            if not isinstance(channel, discord.TextChannel):
+                continue
+            try:
+                perms = channel.permissions_for(guild.me)
+                if not perms.read_messages or not perms.read_message_history:
                     continue
-        except:
-            pass
+                
+                channels_checked += 1
+                logger.info(f"Counting messages for {user.name} in {channel.name}")
+                
+                # Count last 10k messages in each channel
+                async for message in channel.history(limit=10000):
+                    if message.author.id == user.id:
+                        message_count += 1
+            except Exception as e:
+                logger.warning(f"Error in channel {channel.name}: {e}")
+                continue
+        
+        logger.info(f"✅ Found {message_count} messages for {user.name} in {channels_checked} channels")
         
         # Update with actual count
         anime_characters[guild.id][user.id]['points'] = message_count
