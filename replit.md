@@ -9,25 +9,40 @@ Device: Mobile only - requires simple step-by-step guidance with visual confirma
 
 ## Recent Changes (November 27, 2025 - Latest Session)
 
-### Latest Updates:
-- **MUSIC PLAYER MENU**: Added `/play` command menu showing "🎵 Τώρα Παίζει" with 4 control buttons
-  - Buttons: 🛑 Stop, ▶️ Start/Pause, 🔊 Φωνή (Volume), 📋 Info
-  - Shows song title, link section, controls guide
-  - Beautiful green embed with thumbnail
-- **ADMIN POWER COMMAND**: Added `/admin_power @user add/remove X` for owner-only power management
-  - Add points: `/admin_power @user add 100`
-  - Remove points: `/admin_power @user remove 50`
+### Final Updates:
+- **MUSIC PLAYER FIXED**: 
+  - `/play` now shows "🎵 Τώρα Παίζει" menu with 4 control buttons (Stop, Start/Pause, Volume, Info)
+  - Works for both single songs and playlists
+  - No more "Προστέθηκε" messages cluttering the chat
+- **AUDIO PLAYBACK FIXED**: 
+  - Changed from FFmpegOpusAudio to FFmpegPCMAudio for reliability
+  - Simplified ffmpeg options for better compatibility
+  - Audio now plays properly in voice channels
+- **ADMIN POWER COMMAND**: `/admin_power @user add/remove X` for owner-only power management
 - **REMOVED COMMANDS**: Deleted `/add_infraction` and `/infractions` commands
-- **RAID DISPLAY**: Simplified to 2 embeds (attacker + defender) with avatars side-by-side
-- **VOICE CONNECTION FIX**: Improved `/play` retry logic (3 attempts, 30s timeout each)
+- **RAID DISPLAY**: Compact 2-embed format (attacker + defender) with avatars
 
 ### Previous Session Updates:
-- **NSFW REMOVAL**: Deleted all NSFW detection command (`/nsfw`, NSFWConfirmationView, NSFWEnforcementView classes)
-- **24/7 UPTIME OPTIMIZATION**: 
-  - Reduced auto-ping interval from 3 to 2 minutes for maximum uptime
-  - Added Flask + aiohttp to requirements.txt
-  - Verified keep-alive system: Flask server on port 5000 + auto-ping loop
-  - Bot stays alive through continuous pinging every 2 minutes
+- **NSFW REMOVAL**: Deleted all NSFW detection commands
+- **24/7 UPTIME**: Auto-ping every 2 minutes
+- **Voice Connection**: Improved retry logic (3 attempts, 30s timeout each)
+
+## System Architecture - Music Player
+
+**Music Player Features:**
+- `/play URL_or_search` - Play from YouTube
+- Interactive menu shows song info with thumbnail
+- Control buttons: 🛑 Stop, ▶️ Start/Pause, 🔊 Volume, 📋 Info
+- Queue management with `/queue` command
+- Loop modes: `/loop single/queue/off`
+- Skip: `/skip`
+- Disconnect: `/disconnect`
+- Now playing: `/now_playing` (shows menu anytime)
+
+**Audio Configuration:**
+- FFmpegPCMAudio for maximum compatibility
+- 128k bitrate, 48kHz sample rate, stereo audio
+- Automatic stream reconnection with max 5 second delay
 
 ## System Architecture - Anime Gamification
 
@@ -42,43 +57,18 @@ Device: Mobile only - requires simple step-by-step guidance with visual confirma
 
 **Character Selection Flow:**
 1. User runs `/my_anime_character`
-2. If new: Shows 3 random characters (different for each user)
-3. User selects character → Shows "🔄 Υπολογίζω..."
+2. If new: Shows 3 random characters
+3. User selects character
 4. Bot counts all past messages in background
 5. Character assigned with starting points = message count
 6. Future messages = +1 point each
 
-**Stats Display:**
-- **Points**: Total accumulated power (starts from message count)
-- **Message Count**: Total messages ever sent
-- **Power Level**: message_count × 0.1 (percentage)
-- **Character Image**: Visual representation of chosen anime character
-- **Series Name**: Show which anime series the character is from
-
 **Raid Battle System:**
-- Shows list of all other players with characters
-- Player selects opponent
-- Battle result: 50% win chance base (adjusted by power)
+- `/raid` shows list of other players
+- Select opponent and battle
+- 50% base win chance (adjusted by power ratio)
 - Winner gains 50% of loser's points
-- Real-time point transfer
-- Compact 2-embed display with avatars
-
-**Admin Power Management:**
-- Owner-only `/admin_power` command
-- Add or remove power from any user
-- Shows Before/After stats
-- Saves automatically
-
-**Music Player System:**
-- `/play URL_or_search` - Play music from YouTube
-- Beautiful interactive menu with song info
-- Control buttons: Stop, Start/Pause, Volume, Info
-- Queue management with `/queue`
-- Volume control: `/volume 0-100`
-- Skip: `/skip`
-- Loop: `/loop single/queue/off`
-- Disconnect: `/disconnect`
-- Retry logic for voice connection stability
+- Compact 2-embed display with user avatars
 
 # External Dependencies
 
@@ -86,61 +76,38 @@ Device: Mobile only - requires simple step-by-step guidance with visual confirma
 - **discord.py**: Discord API wrapper
 - **discord.ui**: Button/View components
 - **flask**: Web server (keep-alive, port 5000)
-- **aiohttp**: Async HTTP client for keep-alive pings
-- **requests**: HTTP library for auto-ping
+- **aiohttp**: Async HTTP client
 - **yt-dlp**: YouTube video downloading
 - **python-dotenv**: Environment variables
 - **PyNaCl**: Voice channel support
-- **asyncio, random, logging**: Standard utilities
 
 ## 24/7 Uptime System
-- **Flask Server**: Runs on port 5000 with endpoints `/ping`, `/health`, `/`
-- **Auto-ping Mechanism**: Pings keep-alive endpoint every 2 minutes
-- **Threading**: Dual-thread model (Flask + Discord bot)
-- **Fallback URLs**: Supports both Replit dev domain and Railway public domain
-- **Status Page**: HTML dashboard showing bot status and setup instructions
+- **Flask Server**: Port 5000 endpoints (`/ping`, `/health`, `/`)
+- **Auto-ping**: Every 2 minutes to keep bot alive
+- **Threading**: Dual-thread (Flask + Discord bot)
+- **Fallback URLs**: Replit dev domain + Railway support
+
+## Music Streaming
+- **yt-dlp**: Format: bestaudio/best, Opus extraction enabled
+- **FFmpeg**: PCMAudio at 128k, 48kHz, stereo with reconnect
+- **Discord Voice**: Full audio streaming with buffer management
 
 ## Anime Characters Database (52+ total)
-- Naruto: Naruto, Sasuke, Kakashi
-- One Piece: Luffy, Zoro, Nami, Sanji, Chopper, Robin, Franky, Brook, Jinbe
-- Dragon Ball: Goku, Vegeta, Frieza, Cell, Majin Buu, Androids, Piccolo, Krillin, etc.
-- Demon Slayer: Tanjiro, Nezuko
-- My Hero Academia: Deku, Bakugo, Todoroki, All Might
-- JoJo's: Jotaro, DIO, Giorno
-- Fairy Tail: Natsu, Erza, Gray, Acnologia
-- Death Note: Light, L, Ryuk, Misa
-- Bleach: Ichigo, etc.
-- Attack on Titan: Eren, Levi, Mikasa, Colossal Titan
-- Jujutsu Kaisen: Sukuna, Gojo, Yuji
-- Re:Zero: Rem, Emilia
+- Naruto, One Piece, Dragon Ball, Demon Slayer, My Hero Academia, JoJo's, Fairy Tail, Death Note, Bleach, Attack on Titan, Jujutsu Kaisen, Re:Zero and more
 
 # Important Technical Notes
 
 **Data Storage:**
 - `anime_characters`: {guild_id: {user_id: {'char_id': X, 'points': Y, 'message_count': Z}}}
-- `user_message_counts`: {guild_id: {user_id: message_count}}
-- In-memory only (resets on bot restart - consider persistent storage for production)
-
-**Message Counting Algorithm:**
-- Iterates max 20 channels per server (avoid rate limits)
-- Reads max 50,000 messages per channel
-- Updates character points with total count
-- Respects Discord rate limiting
+- In-memory only (resets on bot restart)
 
 **Raid Battle Logic:**
-- Power ratio determines win probability
-- 100x stronger = 95% win, equal = 55% win, weaker = 40% win
-- Point theft: 50% of loser's current points
-- Loser's points can go to 0 minimum
+- Power ratio determines win probability (100x = 95%, equal = 55%, weaker = 40%)
+- Point theft: 50% of loser's points to winner
+- Cooldown: 2 minutes between raids
 
-**Music Player Features:**
-- Retry logic: 3 connection attempts (30s timeout each)
-- Interactive menu with 4 control buttons
-- Real-time queue management
-- Thumbnail display for songs
-
-**Performance Considerations:**
-- 10-second timeout on background message counting
-- Max 20 channels + 50k messages limit per channel
+**Performance:**
+- 10-second timeout on message counting
+- Max 20 channels + 50k messages per channel
 - Async/await for non-blocking operations
-- Error handling for rate limits and permission issues
+- Error handling for rate limits and Discord issues

@@ -141,7 +141,7 @@ ytdl_format_options = {
 
 ffmpeg_options = {
     'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
-    'options': '-vn -b:a 192k -ar 48000 -ac 2 -filter:a "dynaudnorm=f=150:g=15"'
+    'options': '-vn -b:a 128k -ar 48000 -ac 2'
 }
 
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
@@ -209,7 +209,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
             data = data['entries'][0]
         filename = data['url'] if stream else ytdl.prepare_filename(data)
         
-        return cls(discord.FFmpegOpusAudio(filename, **ffmpeg_options), data=data)
+        return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
 class GiveawayView(discord.ui.View):
     def __init__(self, giveaway_id):
@@ -1125,12 +1125,26 @@ async def play(interaction: discord.Interaction, search: str):
                     'thumbnail': entry.get('thumbnail')
                 })
             
-            embed = discord.Embed(
-                title="➕ Προστέθηκε Playlist",
-                description=f"**{len(data['entries'][:10])} τραγούδια** στην ουρά!",
-                color=discord.Color.green()
-            )
-            await interaction.followup.send(embed=embed)
+            # Start playing if nothing is playing
+            if not voice_client.is_playing() and not voice_client.is_paused():
+                await play_next(interaction.guild)
+                for i in range(20):
+                    await asyncio.sleep(0.1)
+                    if voice_client.is_playing():
+                        break
+            
+            # Show now playing menu for first song in playlist
+            queue = music_queues[interaction.guild.id]
+            if queue.current:
+                embed = discord.Embed(
+                    title="🎵 Τώρα Παίζει",
+                    description=f"▶️ **{queue.current.get('title', 'Unknown')}**\n\n🔗 **Link**\nΆνοιγμα στο YouTube\n\n🎮 **Controls**\nΧρησιμοποιήστε τα buttons παρακάτω!\n\n↓ Απολάύστε τη μουσική!",
+                    color=discord.Color.green()
+                )
+                if queue.current.get('thumbnail'):
+                    embed.set_thumbnail(url=queue.current['thumbnail'])
+                view = PlayMenuView(interaction.guild.id, queue.current)
+                await interaction.followup.send(embed=embed, view=view)
         else:
             song_data = {
                 'url': data['webpage_url'],
@@ -1144,7 +1158,6 @@ async def play(interaction: discord.Interaction, search: str):
             # Start playing if nothing is playing
             if not voice_client.is_playing() and not voice_client.is_paused():
                 await play_next(interaction.guild)
-                # Wait for playback to start
                 for i in range(20):
                     await asyncio.sleep(0.1)
                     if voice_client.is_playing():
