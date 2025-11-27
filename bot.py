@@ -1921,23 +1921,27 @@ class RaidView(discord.ui.View):
         # Avoid division by zero
         power_ratio = attacker_power / max(1, defender_power)
         
-        # Calculate win probability based on power ratio
+        # Calculate win probability based on power ratio - IMPROVED
         if power_ratio >= 100:  # 100x more powerful
-            win_probability = 0.95
+            win_probability = 0.99
         elif power_ratio >= 50:  # 50x more powerful
-            win_probability = 0.93
+            win_probability = 0.97
         elif power_ratio >= 20:  # 20x more powerful
-            win_probability = 0.90
+            win_probability = 0.95
         elif power_ratio >= 10:  # 10x more powerful
-            win_probability = 0.85
+            win_probability = 0.90
         elif power_ratio >= 5:  # 5x more powerful
-            win_probability = 0.75
+            win_probability = 0.85
+        elif power_ratio >= 3:  # 3x more powerful
+            win_probability = 0.80
         elif power_ratio >= 2:  # 2x more powerful
-            win_probability = 0.65
+            win_probability = 0.80
+        elif power_ratio >= 1.5:  # 1.5x more powerful
+            win_probability = 0.70
         elif power_ratio >= 1:  # More powerful or equal
-            win_probability = 0.55
+            win_probability = 0.60
         else:  # Defender is more powerful
-            win_probability = 0.40
+            win_probability = 0.35
         
         attacker_win = random.random() < win_probability
         

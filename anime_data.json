@@ -2,15 +2,15 @@
   "1162021150822502541": {
     "864111259389394965": {
       "char_id": 13,
-      "points": 2,
+      "points": 4,
       "message_count": 3,
       "last_raid_time": 1764270767.390706
     },
     "839148474314129419": {
       "char_id": 11,
-      "points": 5,
-      "message_count": 5,
-      "last_raid_time": 1764271172.242279
+      "points": 2,
+      "message_count": 4,
+      "last_raid_time": 1764271338.669759
     },
     "975077862002552915": {
       "char_id": 25,
@@ -27,7 +27,7 @@
     "1269342746204835900": {
       "char_id": 18,
       "points": 1,
-      "message_count": 2,
+      "message_count": 1,
       "last_raid_time": 0
     }
   }
