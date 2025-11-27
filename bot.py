@@ -1167,25 +1167,62 @@ async def play(interaction: discord.Interaction, search: str):
             }
             
             music_queues[interaction.guild.id].add(song_data)
-            
-            embed = discord.Embed(
-                title="➕ Προστέθηκε στην ουρά",
-                description=f"**{song_data['title']}**",
-                color=discord.Color.green()
-            )
-            
-            if song_data['thumbnail']:
-                embed.set_thumbnail(url=song_data['thumbnail'])
-            
             queue_pos = music_queues[interaction.guild.id].size()
-            embed.add_field(name="📍 Θέση στην ουρά", value=f"#{queue_pos}", inline=True)
             
-            if song_data['duration']:
-                minutes = song_data['duration'] // 60
-                seconds = song_data['duration'] % 60
-                embed.add_field(name="⏱️ Διάρκεια", value=f"{minutes}:{seconds:02d}", inline=True)
-            
-            await interaction.followup.send(embed=embed)
+            # If this is the first song (queue_pos == 1), show now playing menu instead of queue message
+            if queue_pos == 1:
+                # Wait a bit for song to start
+                await asyncio.sleep(0.5)
+                
+                # Check if song is playing
+                if voice_client.is_playing() and music_queues[interaction.guild.id].current:
+                    embed = discord.Embed(
+                        title="🎵 Τώρα Παίζει",
+                        description=f"▶️ **{music_queues[interaction.guild.id].current.get('title', 'Unknown')}**\n\n🔗 **Link**\nΆνοιγμα στο YouTube\n\n🎮 **Controls**\nΧρησιμοποιήστε τα buttons παρακάτω!\n\n↓ Απολάύστε τη μουσική!",
+                        color=discord.Color.green()
+                    )
+                    
+                    if music_queues[interaction.guild.id].current.get('thumbnail'):
+                        embed.set_thumbnail(url=music_queues[interaction.guild.id].current['thumbnail'])
+                    
+                    view = PlayMenuView(interaction.guild.id, music_queues[interaction.guild.id].current)
+                    await interaction.followup.send(embed=embed, view=view)
+                else:
+                    # If not playing yet, show queue message
+                    embed = discord.Embed(
+                        title="➕ Προστέθηκε στην ουρά",
+                        description=f"**{song_data['title']}**",
+                        color=discord.Color.green()
+                    )
+                    
+                    if song_data['thumbnail']:
+                        embed.set_thumbnail(url=song_data['thumbnail'])
+                    
+                    if song_data['duration']:
+                        minutes = song_data['duration'] // 60
+                        seconds = song_data['duration'] % 60
+                        embed.add_field(name="⏱️ Διάρκεια", value=f"{minutes}:{seconds:02d}", inline=True)
+                    
+                    await interaction.followup.send(embed=embed)
+            else:
+                # Multiple songs - show queue position
+                embed = discord.Embed(
+                    title="➕ Προστέθηκε στην ουρά",
+                    description=f"**{song_data['title']}**",
+                    color=discord.Color.green()
+                )
+                
+                if song_data['thumbnail']:
+                    embed.set_thumbnail(url=song_data['thumbnail'])
+                
+                embed.add_field(name="📍 Θέση στην ουρά", value=f"#{queue_pos}", inline=True)
+                
+                if song_data['duration']:
+                    minutes = song_data['duration'] // 60
+                    seconds = song_data['duration'] % 60
+                    embed.add_field(name="⏱️ Διάρκεια", value=f"{minutes}:{seconds:02d}", inline=True)
+                
+                await interaction.followup.send(embed=embed)
         
         if not voice_client.is_playing() and not voice_client.is_paused():
             await play_next(interaction.guild)
