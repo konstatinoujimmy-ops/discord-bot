@@ -2217,67 +2217,49 @@ class RaidView(discord.ui.View):
             result_text += f"💰 {stolen_points} points κλάπηκαν!"
             color = discord.Color.red()
         
-        # Create visual battle scene description
-        battle_scene = f"""
-╔════════════════════════════════════════╗
-║        🎌 **EPIC ANIME BATTLE** 🎌      ║
-╚════════════════════════════════════════╝
-
-⚔️ **{interaction.user.name}** ⚔️
-{attacker_char['name']}
-{attacker_char['series']}
-───────────────────────────────
-🆚 VS 🆚
-───────────────────────────────
-🛡️ **{defender_name}** 🛡️
-{defender_char['name']}
-{defender_char['series']}
-
-{result_title}
-"""
+        # Create attacker embed with image
+        attacker_embed = discord.Embed(
+            title=f"⚔️ {interaction.user.name}",
+            description=f"**{attacker_char['name']}**\n{attacker_char['series']}",
+            color=discord.Color.blue()
+        )
+        attacker_embed.add_field(name="💪 Power", value=f"{attacker_power} ⭐", inline=True)
+        attacker_embed.add_field(name="💰 Final Points", value=f"{attacker_data['points']} ⭐", inline=True)
+        attacker_embed.set_image(url=attacker_char['image'])
+        attacker_embed.set_footer(text="ATTACKER")
         
-        # Create rich embed with battle scene
-        embed = discord.Embed(
-            title="⚔️⚔️ ANIME RAID BATTLE ⚔️⚔️",
-            description=battle_scene,
+        # Create defender embed with image
+        defender_embed = discord.Embed(
+            title=f"🛡️ {defender_name}",
+            description=f"**{defender_char['name']}**\n{defender_char['series']}",
+            color=discord.Color.red()
+        )
+        defender_embed.add_field(name="💪 Power", value=f"{defender_power} ⭐", inline=True)
+        defender_embed.add_field(name="💰 Final Points", value=f"{defender_data['points']} ⭐", inline=True)
+        defender_embed.set_image(url=defender_char['image'])
+        defender_embed.set_footer(text="DEFENDER")
+        
+        # Create battle result embed
+        battle_title = f"🎉 {attacker_char['name']} WINS! 🎉" if attacker_win else f"🛡️ {defender_char['name']} WINS! 🛡️"
+        
+        result_embed = discord.Embed(
+            title="⚔️⚔️ RAID BATTLE RESULT ⚔️⚔️",
+            description=f"""
+{result_title}
+
+**Points Transferred:** {stolen_points} ⭐
+
+💫 **Battle Summary:**
+⚔️ {attacker_char['name']} (Attacker): {attacker_power} → {attacker_data['points']} ⭐
+🛡️ {defender_char['name']} (Defender): {defender_power} → {defender_data['points']} ⭐
+""",
             color=color,
             timestamp=datetime.utcnow()
         )
-        
-        # Add attacker stats
-        embed.add_field(
-            name=f"⚔️ {interaction.user.name}",
-            value=f"**{attacker_char['name']}**\nSeries: {attacker_char['series']}\n💪 Power: {attacker_power} ⭐\n💰 Final: {attacker_data['points']} ⭐",
-            inline=True
-        )
-        
-        # Add VS symbol
-        embed.add_field(
-            name="🆚",
-            value=f"```\n  RAID BATTLE\n  {stolen_points} pts\n  TRANSFERRED\n```",
-            inline=True
-        )
-        
-        # Add defender stats
-        embed.add_field(
-            name=f"🛡️ {defender_name}",
-            value=f"**{defender_char['name']}**\nSeries: {defender_char['series']}\n💪 Power: {defender_power} ⭐\n💰 Final: {defender_data['points']} ⭐",
-            inline=True
-        )
-        
-        # Set attacker image as main and defender as thumbnail for side-by-side view
-        embed.set_image(url=attacker_char['image'])
-        embed.set_thumbnail(url=defender_char['image'])
-        
-        # Add footer with battle result
-        if attacker_win:
-            footer_text = f"🎉 {attacker_char['name']} WINS! 🎉"
-        else:
-            footer_text = f"🛡️ {defender_char['name']} WINS! 🛡️"
-        embed.set_footer(text=footer_text)
+        result_embed.set_footer(text=battle_title)
         
         save_anime_data()  # Save raid results
-        await interaction.response.edit_message(embed=embed, view=None)
+        await interaction.response.edit_message(embeds=[attacker_embed, result_embed, defender_embed], view=None)
 
 @tree.command(name="my_anime_character", description="🎌 Διάλεξε τον anime character σου και γίνε πιο δυνατός!")
 async def my_anime_character(interaction: discord.Interaction):
