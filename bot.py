@@ -15,6 +15,7 @@ import random
 import aiohttp
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict, deque
+from anime_data import ANIME_CHARACTERS, get_random_characters
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,6 +65,10 @@ security_tracker = {
 active_giveaways = {}
 nsfw_violations = {}  # {guild_id: {user_id: {'count': X, 'last_violation': timestamp, 'user': user_obj}}}
 infractions_db = {}  # {guild_id: {user_id: [{'type': 'NSFW'|'TIMEOUT'|'MUTE'|'KICK'|'BAN', 'date': timestamp, 'reason': str}]}}
+
+# Anime Character System
+anime_characters = {}  # {guild_id: {user_id: {'char_id': X, 'points': Y, 'message_count': Z}}}
+user_message_counts = {}  # {guild_id: {user_id: message_count}}
 
 def parse_duration(duration_str: str) -> int:
     """
@@ -1781,10 +1786,26 @@ async def check_image_nsfw(image_url: str) -> bool:
 
 @bot.event
 async def on_message(message):
-    """Monitor messages for NSFW images"""
+    """Monitor messages for NSFW images and track anime character points"""
     if message.author.bot:
         await bot.process_commands(message)
         return
+    
+    # Track message count for anime character power
+    guild = message.guild
+    if guild:
+        if guild.id not in user_message_counts:
+            user_message_counts[guild.id] = {}
+        
+        if message.author.id not in user_message_counts[guild.id]:
+            user_message_counts[guild.id][message.author.id] = 0
+        
+        user_message_counts[guild.id][message.author.id] += 1
+        
+        # Update character points
+        if guild.id in anime_characters and message.author.id in anime_characters[guild.id]:
+            anime_characters[guild.id][message.author.id]['points'] = user_message_counts[guild.id][message.author.id]
+            anime_characters[guild.id][message.author.id]['message_count'] = user_message_counts[guild.id][message.author.id]
     
     try:
         # Check if message has attachments
@@ -1872,6 +1893,192 @@ async def on_guild_join(guild):
             await guild.system_channel.send(embed=embed)
         except:
             logger.warning(f"Could not send welcome message to {guild.name}")
+
+# Anime Character System Views
+class AnimeCharacterView(discord.ui.View):
+    def __init__(self, user_id, char_options):
+        super().__init__(timeout=300)
+        self.user_id = user_id
+        self.char_options = char_options
+        
+        for i, char_id in enumerate(char_options, 1):
+            char = ANIME_CHARACTERS[char_id]
+            button = discord.ui.Button(
+                label=f"{i}. {char['name']}",
+                custom_id=f"anime_select_{char_id}",
+                style=discord.ButtonStyle.primary
+            )
+            button.callback = self.select_character
+            self.add_item(button)
+    
+    async def select_character(self, interaction: discord.Interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ Αυτό δεν είναι για σένα!", ephemeral=True)
+            return
+        
+        char_id = int(interaction.data['custom_id'].replace('anime_select_', ''))
+        char = ANIME_CHARACTERS[char_id]
+        guild = interaction.guild
+        
+        # Αποθήκευση character
+        if guild.id not in anime_characters:
+            anime_characters[guild.id] = {}
+        
+        anime_characters[guild.id][interaction.user.id] = {
+            'char_id': char_id,
+            'points': 0,
+            'message_count': 0
+        }
+        
+        embed = discord.Embed(
+            title=f"🎌 Επέλεξες: {char['name']}!",
+            description=f"**Series:** {char['series']}\n**Points:** 0 ⭐\n**Power Level:** 0%",
+            color=discord.Color.purple()
+        )
+        embed.set_image(url=char['image'])
+        embed.set_footer(text="Εστάλησαν περισσότερα μηνύματα = πιο δυνατός χαρακτήρας!")
+        
+        await interaction.response.edit_message(embed=embed, view=None)
+
+class RaidView(discord.ui.View):
+    def __init__(self, attacker_id, defenders):
+        super().__init__(timeout=300)
+        self.attacker_id = attacker_id
+        self.defenders = defenders
+        
+        for defender_id in defenders[:5]:  # Max 5 buttons
+            user = None
+            for guild_id in anime_characters:
+                if defender_id in anime_characters[guild_id]:
+                    user = discord.utils.get(bot.get_all_members(), id=defender_id)
+                    break
+            
+            if user:
+                button = discord.ui.Button(
+                    label=f"⚔️ Raid {user.name[:15]}",
+                    custom_id=f"raid_attack_{defender_id}",
+                    style=discord.ButtonStyle.red
+                )
+                button.callback = self.raid_attack
+                self.add_item(button)
+    
+    async def raid_attack(self, interaction: discord.Interaction):
+        if interaction.user.id != self.attacker_id:
+            await interaction.response.send_message("❌ Αυτό δεν είναι για σένα!", ephemeral=True)
+            return
+        
+        defender_id = int(interaction.data['custom_id'].replace('raid_attack_', ''))
+        guild = interaction.guild
+        
+        attacker_data = anime_characters[guild.id][interaction.user.id]
+        defender_data = anime_characters[guild.id][defender_id]
+        
+        attacker_power = attacker_data['points']
+        defender_power = defender_data['points']
+        
+        # Random battle result (50% win chance base)
+        attacker_win = random.random() < 0.5 or attacker_power > defender_power * 0.8
+        
+        if attacker_win:
+            # Attacker wins 50% of defender's points
+            stolen_points = int(defender_power * 0.5)
+            attacker_data['points'] += stolen_points
+            defender_data['points'] -= stolen_points
+            
+            result_text = f"🎉 **ΝΙΚΗ!** Έκλεψες {stolen_points} points από τον εχθρό!\n"
+            result_text += f"**Δικά σου points:** {attacker_data['points']} ⭐\n"
+            result_text += f"**Points εχθρού:** {max(0, defender_data['points'])} ⭐"
+            color = discord.Color.green()
+        else:
+            result_text = f"❌ **ΗΤΤΑ!** Ο εχθρός ήταν πιο δυνατός!\n"
+            result_text += f"**Δικά σου points:** {attacker_data['points']} ⭐"
+            color = discord.Color.red()
+        
+        embed = discord.Embed(
+            title="⚔️ Raid Battle Result",
+            description=result_text,
+            color=color,
+            timestamp=datetime.utcnow()
+        )
+        
+        await interaction.response.edit_message(embed=embed, view=None)
+
+@tree.command(name="my_anime_character", description="🎌 Διάλεξε τον anime character σου και γίνε πιο δυνατός!")
+async def my_anime_character(interaction: discord.Interaction):
+    guild = interaction.guild
+    
+    # Check if already has character
+    if guild.id in anime_characters and interaction.user.id in anime_characters[guild.id]:
+        char_id = anime_characters[guild.id][interaction.user.id]['char_id']
+        char = ANIME_CHARACTERS[char_id]
+        points = anime_characters[guild.id][interaction.user.id]['points']
+        msg_count = anime_characters[guild.id][interaction.user.id]['message_count']
+        
+        embed = discord.Embed(
+            title=f"🎌 Ο Character σου: {char['name']}",
+            description=f"**Series:** {char['series']}\n**Points:** {points} ⭐\n**Messages:** {msg_count}📝",
+            color=discord.Color.gold()
+        )
+        embed.set_image(url=char['image'])
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+    
+    # Get 3 random characters
+    char_ids = get_random_characters()
+    view = AnimeCharacterView(interaction.user.id, char_ids)
+    
+    embed = discord.Embed(
+        title="🎌 Διάλεξε τον Anime Character σου!",
+        description="Πάτησε ένα κουμπί για να διαλέξεις. Κάθε μήνυμα = +1 Power! 💪",
+        color=discord.Color.blurple()
+    )
+    
+    for char_id in char_ids:
+        char = ANIME_CHARACTERS[char_id]
+        embed.add_field(
+            name=f"⭐ {char['name']}",
+            value=f"Series: {char['series']}",
+            inline=False
+        )
+    
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+
+@tree.command(name="raid", description="⚔️ Κάνε raid σε άλλον anime character και κλέψε points!")
+async def raid(interaction: discord.Interaction):
+    guild = interaction.guild
+    
+    # Check if user has character
+    if guild.id not in anime_characters or interaction.user.id not in anime_characters[guild.id]:
+        await interaction.response.send_message("❌ Πρώτα πρέπει να διαλέξεις έναν anime character με `/my_anime_character`!", ephemeral=True)
+        return
+    
+    # Get all users with characters
+    defenders = [uid for uid in anime_characters[guild.id].keys() if uid != interaction.user.id]
+    
+    if not defenders:
+        await interaction.response.send_message("❌ Κανένας άλλος δεν έχει διαλέξει character ακόμα!", ephemeral=True)
+        return
+    
+    # Show raid options
+    embed = discord.Embed(
+        title="⚔️ Raid Battle Menu",
+        description="Διάλεξε ποιον θέλεις να κάνεις raid:",
+        color=discord.Color.red()
+    )
+    
+    for defender_id in defenders[:5]:
+        defender_data = anime_characters[guild.id][defender_id]
+        defender_char = ANIME_CHARACTERS[defender_data['char_id']]
+        user = guild.get_member(defender_id)
+        
+        embed.add_field(
+            name=f"⚔️ {defender_char['name']}",
+            value=f"**Player:** {user.mention if user else 'Unknown'}\n**Power:** {defender_data['points']} ⭐",
+            inline=False
+        )
+    
+    view = RaidView(interaction.user.id, defenders)
+    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 def run_bot():
     token = os.getenv('DISCORD_TOKEN')

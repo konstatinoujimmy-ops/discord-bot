@@ -1,82 +1,143 @@
 # Overview
 
-This is a 24/7 Discord bot designed to run continuously on Replit using free keep-alive mechanisms. The bot features a Flask web server that acts as a health check endpoint, allowing external monitoring services to ping it and prevent the Replit from going to sleep. The bot includes Greek language support for commands and messages, comprehensive logging, and automatic restart capabilities.
+This is a 24/7 Discord bot designed to run continuously on Bot-Hosting.net with feature-rich gaming and moderation systems. The bot includes music playback (YouTube via yt-dlp), voice channel management, advanced security monitoring, moderation tools, partnership management system, NSFW content detection, anime character gamification, and comprehensive slash commands. All communication is in Greek language exclusively.
 
 # User Preferences
 
-Preferred communication style: Simple, everyday language.
+Preferred communication style: Simple, everyday language - Greek only, no Portuguese or English.
+Device: Mobile only - requires simple step-by-step guidance with visual confirmations.
 
-## Recent Changes (September 11, 2025)
-- **RAILWAY INTEGRATION READY**: Added complete Railway deployment configuration
-- Created requirements.txt, railway.toml, Procfile, and nixpacks.toml for seamless Railway deployment
-- Modified keep_alive.py to support Railway's PORT environment variable and RAILWAY_PUBLIC_DOMAIN
-- Updated main.py to disable auto-ping on Railway (not needed for 24/7 hosting there)
-- Added comprehensive RAILWAY_DEPLOYMENT_GUIDE.md with step-by-step instructions
-- Railway deployment preserves all bot functionality while providing true 24/7 uptime
-- Bot remains compatible with both Replit and Railway environments
+## Recent Changes (November 27, 2025)
+- **ANIME CHARACTER SYSTEM**: Complete gamification system with 52 viral anime characters
+- Players can use `/my_anime_character` to select from 3 random unique characters (different for each player)
+- Each character displays its image automatically when selected
+- Character power increases with every message sent (1 message = 1 power point)
+- `/raid` command enables PvP battles between characters with 50% point theft on victory
+- Real-time points calculation based on message count
+- Battle system with 50% base win chance (influenced by power levels)
+- `/infractions` and `/add_infraction` commands for tracking user violations
+- Manual infraction addition with multiple types (NSFW, TIMEOUT, MUTE, KICK, BAN)
+- Created anime_data.py with 52 viral anime characters from Naruto, One Piece, Dragon Ball, Demon Slayer, My Hero Academia, JoJo's, Fairy Tail, Death Note, Bleach, Attack on Titan, Jujutsu Kaisen, Re:Zero, and more
 
-## Previous Changes (August 13, 2025)
-- Successfully integrated user's existing Discord bot code with 24/7 keep-alive system
-- Preserved all original slash commands: /dm, /dm2, /mute, /announce, /play, /disconnect, /permissions
-- Added yt-dlp dependency for music functionality
-- Bot successfully connected to Discord as "Dragon ball greece official#6692"
-- Keep-alive web server running on port 5000 with Greek interface
-- Auto-restart mechanism and comprehensive logging implemented
-- Enhanced music player with interactive control buttons (Stop, Start/Pause, Volume, Info)
-- Improved audio quality with Opus codec and optimized FFMPEG settings
-- Fixed UptimeRobot integration with correct Replit dev domain URL
-- User confirmed UptimeRobot setup complete for 24/7 operation
-- Opened /play command to all users (not just staff)
-- Ultra premium audio quality (512k bitrate, 48kHz, Discord-optimized Opus)
-- Advanced security: Auto-removal of ban permissions from non-owners
-- Added /ban command (owner-only) and /protect_roles for security monitoring
-- Real-time role permission monitoring with owner notifications
-- CONFIRMED: 24/7 system working perfectly with UptimeRobot monitoring
-- Bot auto-restarts every ~20min (normal Replit behavior) and UptimeRobot immediately re-activates it
-- Ultra premium audio quality implemented with dynamic audio normalization
-- ULTIMATE SECURITY SYSTEM: Auto-monitors channels, @everyone mentions, bans, kicks, timeouts
-- Auto-ping system ensures 24/7 uptime without external services (improved to 3-minute intervals)
-- Double heartbeat system: Auto-ping (3min) + Bot heartbeat (2min) for maximum reliability
-- /security_status command accessible to owner and staff roles
-- /security_report command generates comprehensive security reports with detailed analysis
-- One-click security report generator with violation statistics, timeline, and risk assessment
+## Previous Changes (November 2025)
+- Successfully deployed bot to Bot-Hosting.net with 6 core files
+- Fixed DISCORD_TOKEN loading using python-dotenv in start.py
+- Implemented partnership system with approval workflow (validates 450+ member requirement)
+- Created NSFW detection system with automatic 10-minute timeout
+- Added role-based permissions (role ID: 1162022515846172723)
 
 # System Architecture
 
 ## Core Components
 
-**Bot Architecture**: The system uses discord.py library with a command-based architecture. The main bot logic is separated into `bot.py` which handles Discord events and commands, while `main.py` serves as the entry point that orchestrates both the Discord bot and keep-alive server.
+**Bot Architecture**: Discord.py with command-based architecture. Main logic in `bot.py`, entry point in `main.py` or `start.py` for Bot-Hosting.net compatibility.
 
-**Keep-Alive Mechanism**: A Flask web server runs in a separate thread to provide HTTP endpoints that external services can ping. This prevents Replit from putting the application to sleep due to inactivity. The keep-alive server provides both a status page and a `/ping` endpoint for monitoring services.
+**Anime Character System**: 
+- 52+ viral anime characters database in `anime_data.py`
+- Per-user character selection with unique 3-character choices per user
+- Message-based power progression system
+- PvP raid battles with point theft mechanics
+- Database: `anime_characters` (guild_id → user_id → character data)
 
-**Threading Model**: The application uses Python threading to run the Discord bot and Flask server concurrently. The main thread starts the Flask server in a daemon thread, then runs the Discord bot in the main thread.
+**Keep-Alive Mechanism**: Flask web server for health checks (Replit compatibility).
 
-**Error Handling**: Comprehensive error handling includes global command error handlers for the Discord bot and automatic restart mechanisms in the main application loop. The system logs all errors and attempts to recover from failures automatically.
+**Threading Model**: Concurrent Discord bot and Flask server execution.
 
-**Logging System**: Centralized logging configuration using Python's logging module with INFO level logging to console, providing visibility into bot operations and debugging information.
+**Error Handling**: Global error handlers with automatic recovery.
+
+**Logging System**: Centralized INFO-level logging to console.
+
+## Anime Gamification System
+
+**Character Selection** (`/my_anime_character`):
+- First-time users see 3 random unique characters from 52+ database
+- Each user gets different random selection (no duplicates between users)
+- Selected character displays with series name and image
+- Starting power: 0 points
+
+**Power System**:
+- Every message = +1 point to character power
+- Points tracked globally for raid battles
+- Persistent across commands
+
+**Raid System** (`/raid`):
+- Battle against other players' characters
+- View all active characters with their power levels
+- 50% base win chance (adjusted by power differential)
+- Winner takes 50% of loser's points
+- Real-time point transfers
+
+**Violation Tracking**:
+- `/infractions @user`: View complete violation history
+- `/add_infraction @user TYPE reason`: Manual violation recording (Owner-only)
+- Types: NSFW, TIMEOUT, MUTE, KICK, BAN
+- Automatic NSFW tracking with 10-minute timeout
+- Persistent violation database per guild
 
 ## Design Patterns
 
-**Configuration Management**: Uses environment variables for sensitive data like Discord tokens, accessed through Replit's Secrets system for secure token storage.
+**Configuration Management**: Environment variables for Discord token (DISCORD_TOKEN).
 
-**Event-Driven Architecture**: The Discord bot operates on an event-driven model, responding to Discord events like `on_ready` and `on_command_error`.
+**Event-Driven Architecture**: Discord events (on_message, on_raid, etc.) trigger business logic.
 
-**Template Rendering**: The Flask server uses inline HTML templates for the status page, avoiding external template dependencies.
+**View-Based UI**: Discord.py Views for button interactions (AnimeCharacterView, RaidView).
+
+**Game State Management**: In-memory databases for real-time character and raid data.
 
 # External Dependencies
 
 ## Core Libraries
-- **discord.py**: Primary Discord API wrapper for bot functionality
-- **Flask**: Lightweight web framework for the keep-alive HTTP server
-- **Python standard libraries**: threading, logging, os, time, datetime, asyncio, random
+- **discord.py**: Discord API wrapper
+- **discord.ui**: Button/View components for interactive UI
+- **flask**: Web server (keep-alive)
+- **yt-dlp**: YouTube video downloading
+- **python-dotenv**: Environment variable loading
+- **Standard libraries**: random, asyncio, datetime, logging, threading
 
-## External Services Integration
-- **Discord API**: Direct integration with Discord servers for bot operations
-- **UptimeRobot**: Recommended external monitoring service for keep-alive pings
-- **Cron-Job.org**: Alternative monitoring service option
-- **Replit Secrets**: Environment variable management for secure token storage
+## Anime Characters Database
+52+ viral characters from:
+- Naruto (Naruto, Sasuke, etc.)
+- One Piece (Luffy, Zoro, Nami, Sanji, etc.)
+- Dragon Ball (Goku, Vegeta, Frieza, Cell, etc.)
+- Demon Slayer (Tanjiro, Nezuko, etc.)
+- My Hero Academia (Deku, Bakugo, All Might, etc.)
+- JoJo's Bizarre Adventure (Jotaro, DIO, Giorno, etc.)
+- Fairy Tail (Natsu, Erza, Gray, etc.)
+- Death Note (Light, L, Ryuk, Misa)
+- Bleach (Ichigo, Kenpachi, etc.)
+- Attack on Titan (Eren, Levi, Mikasa, Colossal Titan, etc.)
+- Jujutsu Kaisen (Sukuna, Gojo, Yuji, etc.)
+- Re:Zero (Rem, Emilia, etc.)
 
-## Deployment Platforms
-- **Replit**: Cloud-based development platform with built-in environment variable management and keep-alive mechanisms
-- **Railway**: Production-ready hosting platform for true 24/7 deployment without sleep limitations
-- **Dual Compatibility**: Bot works seamlessly on both platforms with environment auto-detection
+## External Services
+- **Discord API**: Bot communication and events
+- **Bot-Hosting.net**: Production deployment platform
+- **YouTube (yt-dlp)**: Music streaming via /play command
+- **Image URLs**: Character images from pinimg.com (placeholder URLs in anime_data.py)
+
+## Important Technical Notes
+
+**In-Memory Storage**: 
+- `anime_characters`: Character selections and points (per guild)
+- `user_message_counts`: Message tracking for power calculation
+- `nsfw_violations`: NSFW violation tracking
+- `infractions_db`: User infraction history
+- Data persists during bot runtime but resets on restart (consider persistent storage for production)
+
+**Raid Battle Logic**:
+- Base 50% win probability
+- Adjusted by: if attacker_power > defender_power * 0.8 → attacker wins
+- Point theft: 50% of defender's current points
+
+**Message Counter Integration**:
+- Integrated into existing `on_message` event handler
+- Tracks message count per user per guild
+- Updates character power in real-time
+- Only counts messages from users with selected characters
+
+**Infraction Types**:
+- NSFW: Automatic detection and manual addition
+- TIMEOUT: Manual record
+- MUTE: Manual record
+- KICK: Manual record
+- BAN: Manual record
