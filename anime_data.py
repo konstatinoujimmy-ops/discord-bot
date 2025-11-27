@@ -80,6 +80,7 @@ ANIME_CHARACTERS = {
     75: {"name": "Hinata Hyuga", "series": "Naruto", "image": "https://via.placeholder.com/200?text=Hinata"},
     76: {"name": "Sakura Haruno", "series": "Naruto", "image": "https://via.placeholder.com/200?text=Sakura"},
     77: {"name": "Kurama", "series": "Naruto", "image": "https://via.placeholder.com/200?text=Kurama"},
+    78: {"name": "Tien Shinhan", "series": "Dragon Ball", "image": "https://via.placeholder.com/200?text=Tien"},
 }
 
 # Random selection για κάθε user που κάνει select
