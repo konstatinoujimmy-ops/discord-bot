@@ -2135,8 +2135,29 @@ class RaidView(discord.ui.View):
         attacker_power = attacker_data['points']
         defender_power = defender_data['points']
         
-        # Random battle result (50% win chance base)
-        attacker_win = random.random() < 0.5 or attacker_power > defender_power * 0.8
+        # Battle result based on power difference
+        # Avoid division by zero
+        power_ratio = attacker_power / max(1, defender_power)
+        
+        # Calculate win probability based on power ratio
+        if power_ratio >= 100:  # 100x more powerful
+            win_probability = 0.95
+        elif power_ratio >= 50:  # 50x more powerful
+            win_probability = 0.93
+        elif power_ratio >= 20:  # 20x more powerful
+            win_probability = 0.90
+        elif power_ratio >= 10:  # 10x more powerful
+            win_probability = 0.85
+        elif power_ratio >= 5:  # 5x more powerful
+            win_probability = 0.75
+        elif power_ratio >= 2:  # 2x more powerful
+            win_probability = 0.65
+        elif power_ratio >= 1:  # More powerful or equal
+            win_probability = 0.55
+        else:  # Defender is more powerful
+            win_probability = 0.40
+        
+        attacker_win = random.random() < win_probability
         
         if attacker_win:
             # Attacker wins 50% of defender's points
