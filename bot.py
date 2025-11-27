@@ -80,7 +80,15 @@ def load_anime_data():
     try:
         if os.path.exists(DATA_FILE):
             with open(DATA_FILE, 'r') as f:
-                anime_characters = json.load(f)
+                data = json.load(f)
+                # Convert string keys to integers
+                anime_characters = {}
+                for guild_id_str, users in data.items():
+                    guild_id = int(guild_id_str)
+                    anime_characters[guild_id] = {}
+                    for user_id_str, char_data in users.items():
+                        user_id = int(user_id_str)
+                        anime_characters[guild_id][user_id] = char_data
                 logger.info(f"✅ Loaded anime data for {sum(len(v) for v in anime_characters.values())} users")
     except Exception as e:
         logger.error(f"Error loading anime data: {e}")
