@@ -1896,7 +1896,7 @@ async def on_guild_join(guild):
 
 # Helper function to count all historical messages from a user
 async def count_user_messages(guild, user) -> int:
-    """Count all messages from user in all channels of the guild"""
+    """Count all messages from user in all channels of the guild (max 10k per channel to avoid rate limit)"""
     total_count = 0
     
     try:
@@ -1907,15 +1907,19 @@ async def count_user_messages(guild, user) -> int:
                 if not channel.permissions_for(guild.me).read_message_history:
                     continue
                 
-                # Count messages from this user
-                async for message in channel.history(limit=None):
+                # Count messages from this user (limit to 10k per channel to avoid rate limiting)
+                async for message in channel.history(limit=10000):
                     if message.author.id == user.id:
                         total_count += 1
-            except:
-                # Skip channels with errors
+                        
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout counting messages in {channel.name}")
                 continue
-    except:
-        pass
+            except Exception as e:
+                logger.warning(f"Error counting messages in {channel.name}: {e}")
+                continue
+    except Exception as e:
+        logger.warning(f"Error in count_user_messages: {e}")
     
     return total_count
 
