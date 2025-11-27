@@ -1088,7 +1088,7 @@ async def play_next(guild):
             logger.error(f"Error playing next song: {e}")
             await play_next(guild)
 
-@tree.command(name="play", description="🎵 Ultra Premium Music Player - Παίξε μουσική από YouTube")
+@tree.command(name="play", description="🎵 Παίξε μουσική από YouTube")
 @app_commands.describe(search="URL ή όνομα τραγουδιού")
 async def play(interaction: discord.Interaction, search: str):
     if not interaction.user.voice or not interaction.user.voice.channel:
@@ -1100,41 +1100,14 @@ async def play(interaction: discord.Interaction, search: str):
 
     await interaction.response.defer()
 
-    # Disconnect from old channel if needed
-    if voice_client and voice_client.channel != channel:
+    # Connect if not already connected
+    if not voice_client or voice_client.channel != channel:
         try:
-            await voice_client.disconnect(force=True)
-            await asyncio.sleep(0.5)
-        except:
-            pass
-        voice_client = None
-
-    # Try to connect with retry logic
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            if not voice_client:
-                logger.info(f"Connecting to voice channel: {channel.name} (Attempt {attempt+1}/{max_retries})")
-                voice_client = await asyncio.wait_for(
-                    channel.connect(timeout=30.0, reconnect=True),
-                    timeout=35.0
-                )
-                logger.info("Voice connection successful!")
-                break
-        except (asyncio.TimeoutError, discord.ClientException) as e:
-            logger.warning(f"Voice connection attempt {attempt+1} failed: {e}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(1)
-            else:
-                await interaction.followup.send(
-                    "❌ **Voice Connection Failed**: Δεν μπόρεσα να συνδεθώ μετά από αρκετές προσπάθειες.\n"
-                    "💡 **Πρόταση**: Δοκίμασε πάλι ή δοκίμασε άλλο κανάλι.",
-                    ephemeral=True
-                )
-                return
+            if voice_client:
+                await voice_client.disconnect(force=True)
+            voice_client = await channel.connect(timeout=30.0, reconnect=True)
         except Exception as e:
-            logger.error(f"Unexpected voice error: {e}")
-            await interaction.followup.send(f"❌ **Σφάλμα**: {str(e)[:100]}", ephemeral=True)
+            await interaction.followup.send(f"❌ Σφάλμα σύνδεσης: {str(e)[:100]}", ephemeral=True)
             return
 
     if interaction.guild.id not in music_queues:
@@ -1154,7 +1127,7 @@ async def play(interaction: discord.Interaction, search: str):
             
             embed = discord.Embed(
                 title="➕ Προστέθηκε Playlist",
-                description=f"**{len(data['entries'][:10])} τραγούδια** προστέθηκαν στην ουρά!",
+                description=f"**{len(data['entries'][:10])} τραγούδια** στην ουρά!",
                 color=discord.Color.green()
             )
             await interaction.followup.send(embed=embed)
@@ -1166,65 +1139,22 @@ async def play(interaction: discord.Interaction, search: str):
                 'thumbnail': data.get('thumbnail')
             }
             
-            # Check if queue was empty BEFORE adding
-            was_queue_empty = music_queues[interaction.guild.id].is_empty() and not music_queues[interaction.guild.id].current
-            
             music_queues[interaction.guild.id].add(song_data)
             
-            # If this was first song (queue was empty), start playing and show menu
-            if was_queue_empty:
-                if not voice_client.is_playing() and not voice_client.is_paused():
-                    await play_next(interaction.guild)
-                
-                # Wait for song to actually start playing
-                for i in range(15):  # Wait up to 3 seconds
-                    await asyncio.sleep(0.2)
-                    if voice_client.is_playing() and music_queues[interaction.guild.id].current:
-                        break
-                
-                # Show now playing menu
-                if voice_client.is_playing() and music_queues[interaction.guild.id].current:
-                    embed = discord.Embed(
-                        title="🎵 Τώρα Παίζει",
-                        description=f"▶️ **{music_queues[interaction.guild.id].current.get('title', 'Unknown')}**\n\n🔗 **Link**\nΆνοιγμα στο YouTube\n\n🎮 **Controls**\nΧρησιμοποιήστε τα buttons παρακάτω!\n\n↓ Απολάύστε τη μουσική!",
-                        color=discord.Color.green()
-                    )
-                    
-                    if music_queues[interaction.guild.id].current.get('thumbnail'):
-                        embed.set_thumbnail(url=music_queues[interaction.guild.id].current['thumbnail'])
-                    
-                    view = PlayMenuView(interaction.guild.id, music_queues[interaction.guild.id].current)
-                    await interaction.followup.send(embed=embed, view=view)
-                else:
-                    # Fallback if not playing
-                    embed = discord.Embed(
-                        title="➕ Προστέθηκε στην ουρά",
-                        description=f"**{song_data['title']}**",
-                        color=discord.Color.green()
-                    )
-                    if song_data['thumbnail']:
-                        embed.set_thumbnail(url=song_data['thumbnail'])
-                    await interaction.followup.send(embed=embed)
-            else:
-                # Already playing other songs - show queue position
-                queue_pos = music_queues[interaction.guild.id].size()
-                embed = discord.Embed(
-                    title="➕ Προστέθηκε στην ουρά",
-                    description=f"**{song_data['title']}**",
-                    color=discord.Color.green()
-                )
-                
-                if song_data['thumbnail']:
-                    embed.set_thumbnail(url=song_data['thumbnail'])
-                
-                embed.add_field(name="📍 Θέση στην ουρά", value=f"#{queue_pos}", inline=True)
-                
-                if song_data['duration']:
-                    minutes = song_data['duration'] // 60
-                    seconds = song_data['duration'] % 60
-                    embed.add_field(name="⏱️ Διάρκεια", value=f"{minutes}:{seconds:02d}", inline=True)
-                
-                await interaction.followup.send(embed=embed)
+            embed = discord.Embed(
+                title="➕ Προστέθηκε",
+                description=f"**{song_data['title']}**",
+                color=discord.Color.green()
+            )
+            
+            if song_data['thumbnail']:
+                embed.set_thumbnail(url=song_data['thumbnail'])
+            
+            await interaction.followup.send(embed=embed)
+        
+        # Start playing if nothing is playing
+        if not voice_client.is_playing() and not voice_client.is_paused():
+            await play_next(interaction.guild)
         
     except Exception as e:
         logger.error(f"Music play error: {e}")
