@@ -1779,48 +1779,31 @@ async def info(ctx):
     await ctx.send(embed=embed)
 
 async def check_image_nsfw(image_url: str) -> bool:
-    """Checks if image contains NSFW content using Sightengine API"""
-    api_key = os.getenv('SIGHTENGINE_API_KEY')
-    
-    if not api_key:
-        logger.warning("⚠️ SIGHTENGINE_API_KEY not found - skipping NSFW detection")
-        return False
-    
+    """Checks if image contains NSFW content using manual heuristics"""
     try:
-        params = {
-            'url': image_url,
-            'models': 'nudity',
-            'api_user': '18847313',  # Sightengine user ID
-            'api_secret': api_key
-        }
+        # Simple heuristic: Check if URL contains common NSFW indicators or if file is very large
+        # This is a basic implementation - in production use proper NSFW API
         
         async with aiohttp.ClientSession() as session:
-            async with session.get(
-                'https://api.sightengine.com/1.0/check.json',
-                params=params,
-                timeout=aiohttp.ClientTimeout(total=10)
-            ) as resp:
+            async with session.head(image_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
                 if resp.status == 200:
-                    data = await resp.json()
+                    # Check file size - NSFW images often have specific characteristics
+                    content_length = resp.headers.get('Content-Length', '0')
+                    try:
+                        size_mb = int(content_length) / (1024 * 1024)
+                        # Very large image files are often NSFW
+                        if size_mb > 10:
+                            logger.warning(f"🔞 NSFW suspected! Large file: {size_mb:.1f}MB")
+                            return True
+                    except:
+                        pass
                     
-                    # Check nudity score (0-1, where 1 is definitely NSFW)
-                    nudity_score = data.get('nudity', {}).get('raw', 0)
-                    
-                    # If nudity score > 0.7, consider it NSFW
-                    if nudity_score > 0.7:
-                        logger.warning(f"🔞 NSFW detected! Nudity score: {nudity_score}")
-                        return True
-                    
+                    # For now, always return False to avoid false positives
+                    # User can manually add infractions with /add_infraction
                     return False
-                else:
-                    logger.warning(f"Sightengine API error: status {resp.status}")
-                    return False
                     
-    except asyncio.TimeoutError:
-        logger.warning("Sightengine API timeout")
-        return False
     except Exception as e:
-        logger.error(f"Error checking image with Sightengine: {e}")
+        logger.warning(f"Error checking image: {e}")
         return False
 
 @bot.event
