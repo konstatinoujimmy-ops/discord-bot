@@ -1948,26 +1948,60 @@ class AnimeCharacterView(discord.ui.View):
         char_id = int(interaction.data['custom_id'].replace('anime_select_', ''))
         char = ANIME_CHARACTERS[char_id]
         guild = interaction.guild
+        user = interaction.user
         
-        # Αποθήκευση character
+        # Αποθήκευση character με temporary 0 points
         if guild.id not in anime_characters:
             anime_characters[guild.id] = {}
         
-        anime_characters[guild.id][interaction.user.id] = {
+        anime_characters[guild.id][user.id] = {
             'char_id': char_id,
             'points': 0,
             'message_count': 0
         }
         
+        # Send immediate response with loading state
         embed = discord.Embed(
             title=f"🎌 Επέλεξες: {char['name']}!",
-            description=f"**Series:** {char['series']}\n**Points:** 0 ⭐\n**Power Level:** 0%",
+            description=f"**Series:** {char['series']}\n**Points:** 🔄 Υπολογίζω...",
+            color=discord.Color.blue()
+        )
+        embed.set_image(url=char['image'])
+        embed.set_footer(text="Μετράω τα παλιά μηνύματα...")
+        
+        await interaction.response.edit_message(embed=embed, view=None)
+        
+        # Count messages in background
+        message_count = 0
+        try:
+            for channel in guild.text_channels[:20]:  # Max 20 channels to avoid rate limit
+                try:
+                    if not channel.permissions_for(guild.me).read_message_history:
+                        continue
+                    async for msg in channel.history(limit=50000):
+                        if msg.author.id == user.id:
+                            message_count += 1
+                except:
+                    continue
+        except:
+            pass
+        
+        # Update with actual count
+        anime_characters[guild.id][user.id]['points'] = message_count
+        anime_characters[guild.id][user.id]['message_count'] = message_count
+        
+        embed = discord.Embed(
+            title=f"🎌 Επέλεξες: {char['name']}!",
+            description=f"**Series:** {char['series']}\n**Points:** {message_count} ⭐\n**Power Level:** {int(message_count * 0.1)}%",
             color=discord.Color.purple()
         )
         embed.set_image(url=char['image'])
-        embed.set_footer(text="Κάθε μήνυμα = +1 Power! 💪")
+        embed.set_footer(text=f"Ξεκίνησες με {message_count} points! Νέα = +1 Power")
         
-        await interaction.response.edit_message(embed=embed, view=None)
+        try:
+            await interaction.edit_original_response(embed=embed)
+        except:
+            pass
 
 class RaidView(discord.ui.View):
     def __init__(self, attacker_id, defenders):
