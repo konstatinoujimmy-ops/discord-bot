@@ -918,6 +918,58 @@ async def ban_user(interaction: discord.Interaction, user: discord.Member, reaso
     except Exception as e:
         await interaction.response.send_message(f"❌ Σφάλμα ban: {e}", ephemeral=True)
 
+class PlayMenuView(discord.ui.View):
+    def __init__(self, guild_id, song_data=None):
+        super().__init__(timeout=None)
+        self.guild_id = guild_id
+        self.song_data = song_data or {}
+
+    @discord.ui.button(label='🛑 Stop', style=discord.ButtonStyle.red, custom_id='play_stop')
+    async def stop_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        voice_client = interaction.guild.voice_client
+        if voice_client:
+            if self.guild_id in music_queues:
+                music_queues[self.guild_id].clear()
+            voice_client.stop()
+            await voice_client.disconnect()
+            await interaction.response.send_message("⏹️ Μουσική σταμάτησε!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Δεν είμαι συνδεδεμένος!", ephemeral=True)
+
+    @discord.ui.button(label='▶️ Start/Pause', style=discord.ButtonStyle.green, custom_id='play_toggle')
+    async def toggle_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        voice_client = interaction.guild.voice_client
+        if voice_client and voice_client.is_playing():
+            voice_client.pause()
+            await interaction.response.send_message("⏸️ Σε παύση!", ephemeral=True)
+        elif voice_client and voice_client.is_paused():
+            voice_client.resume()
+            await interaction.response.send_message("▶️ Συνεχίζει!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Δεν παίζει μουσική!", ephemeral=True)
+
+    @discord.ui.button(label='🔊 Φωνή', style=discord.ButtonStyle.blurple, custom_id='play_volume')
+    async def volume_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("💬 Χρησιμοποίησε `/volume 50` για να ρυθμίσεις την ένταση!", ephemeral=True)
+
+    @discord.ui.button(label='📋 Info', style=discord.ButtonStyle.gray, custom_id='play_info')
+    async def info_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.guild_id in music_queues:
+            queue = music_queues[self.guild_id]
+            if queue.current:
+                embed = discord.Embed(
+                    title="ℹ️ Now Playing Info",
+                    description=f"**{queue.current.get('title', 'Unknown')}**",
+                    color=discord.Color.blue()
+                )
+                if queue.current.get('thumbnail'):
+                    embed.set_thumbnail(url=queue.current['thumbnail'])
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                await interaction.response.send_message("❌ Δεν υπάρχει τραγούδι!", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Δεν υπάρχει ουρά!", ephemeral=True)
+
 class MusicControlView(discord.ui.View):
     def __init__(self, guild_id):
         super().__init__(timeout=None)
@@ -1137,6 +1189,21 @@ async def play(interaction: discord.Interaction, search: str):
         
         if not voice_client.is_playing() and not voice_client.is_paused():
             await play_next(interaction.guild)
+        
+        # Send now playing menu
+        queue = music_queues[interaction.guild.id]
+        if queue.current:
+            embed = discord.Embed(
+                title="🎵 Τώρα Παίζει",
+                description=f"▶️ **{queue.current.get('title', 'Unknown')}**\n\n🔗 **Link**\nΆνοιγμα στο YouTube\n\n🎮 **Controls**\nΧρησιμοποιήστε τα buttons παρακάτω!\n\n↓ Απολάύστε τη μουσική!",
+                color=discord.Color.green()
+            )
+            
+            if queue.current.get('thumbnail'):
+                embed.set_thumbnail(url=queue.current['thumbnail'])
+            
+            view = PlayMenuView(interaction.guild.id, queue.current)
+            await interaction.followup.send(embed=embed, view=view)
         
     except Exception as e:
         logger.error(f"Music play error: {e}")

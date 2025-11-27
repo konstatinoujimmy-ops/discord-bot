@@ -7,18 +7,27 @@ This is a 24/7 Discord bot designed to run continuously on Replit with feature-r
 Preferred communication style: Simple, everyday language - Greek only, no Portuguese or English.
 Device: Mobile only - requires simple step-by-step guidance with visual confirmations.
 
-## Recent Changes (November 27, 2025 - Latest)
+## Recent Changes (November 27, 2025 - Latest Session)
 
-### Session 27/11 Updates:
+### Latest Updates:
+- **MUSIC PLAYER MENU**: Added `/play` command menu showing "🎵 Τώρα Παίζει" with 4 control buttons
+  - Buttons: 🛑 Stop, ▶️ Start/Pause, 🔊 Φωνή (Volume), 📋 Info
+  - Shows song title, link section, controls guide
+  - Beautiful green embed with thumbnail
+- **ADMIN POWER COMMAND**: Added `/admin_power @user add/remove X` for owner-only power management
+  - Add points: `/admin_power @user add 100`
+  - Remove points: `/admin_power @user remove 50`
+- **REMOVED COMMANDS**: Deleted `/add_infraction` and `/infractions` commands
+- **RAID DISPLAY**: Simplified to 2 embeds (attacker + defender) with avatars side-by-side
+- **VOICE CONNECTION FIX**: Improved `/play` retry logic (3 attempts, 30s timeout each)
+
+### Previous Session Updates:
 - **NSFW REMOVAL**: Deleted all NSFW detection command (`/nsfw`, NSFWConfirmationView, NSFWEnforcementView classes)
 - **24/7 UPTIME OPTIMIZATION**: 
   - Reduced auto-ping interval from 3 to 2 minutes for maximum uptime
   - Added Flask + aiohttp to requirements.txt
   - Verified keep-alive system: Flask server on port 5000 + auto-ping loop
   - Bot stays alive through continuous pinging every 2 minutes
-- **Anime Character Raid System**: Three-embed display with user avatars (attacker, battle result, defender)
-- **Character Stats System**: Points ⭐, Message Count 📝, Power Level 💪
-- **Complete Infraction Tracking**: Types now TIMEOUT/MUTE/KICK/BAN (NSFW removed)
 
 ## System Architecture - Anime Gamification
 
@@ -27,8 +36,9 @@ Device: Mobile only - requires simple step-by-step guidance with visual confirma
 - Per-guild, per-user character selection system
 - Historical message counting from Discord history
 - Real-time message tracking for power increments
-- PvP raid battle system with point economy
+- PvP raid battle system with point economy (50% point stealing)
 - Persistent character and stats storage (in-memory)
+- Owner-only power management with `/admin_power`
 
 **Character Selection Flow:**
 1. User runs `/my_anime_character`
@@ -51,12 +61,24 @@ Device: Mobile only - requires simple step-by-step guidance with visual confirma
 - Battle result: 50% win chance base (adjusted by power)
 - Winner gains 50% of loser's points
 - Real-time point transfer
+- Compact 2-embed display with avatars
 
-**Infraction System:**
-- Manual tracking with `/add_infraction`
-- Types: NSFW, TIMEOUT, MUTE, KICK, BAN
-- View history with `/infractions @user`
-- Automatic NSFW detection with timeout
+**Admin Power Management:**
+- Owner-only `/admin_power` command
+- Add or remove power from any user
+- Shows Before/After stats
+- Saves automatically
+
+**Music Player System:**
+- `/play URL_or_search` - Play music from YouTube
+- Beautiful interactive menu with song info
+- Control buttons: Stop, Start/Pause, Volume, Info
+- Queue management with `/queue`
+- Volume control: `/volume 0-100`
+- Skip: `/skip`
+- Loop: `/loop single/queue/off`
+- Disconnect: `/disconnect`
+- Retry logic for voice connection stability
 
 # External Dependencies
 
@@ -106,16 +128,16 @@ Device: Mobile only - requires simple step-by-step guidance with visual confirma
 - Respects Discord rate limiting
 
 **Raid Battle Logic:**
-- Base 50% win probability
-- Adjusted if attacker_power > defender_power × 0.8 → attacker wins
-- Point theft: 50% of defender's current points transferred to winner
+- Power ratio determines win probability
+- 100x stronger = 95% win, equal = 55% win, weaker = 40% win
+- Point theft: 50% of loser's current points
 - Loser's points can go to 0 minimum
 
-**Message Integration:**
-- Every message from any user tracked in real-time
-- Character power increases if user has selected a character
-- Message counting in `on_message` event handler
-- Seamless integration with existing bot events
+**Music Player Features:**
+- Retry logic: 3 connection attempts (30s timeout each)
+- Interactive menu with 4 control buttons
+- Real-time queue management
+- Thumbnail display for songs
 
 **Performance Considerations:**
 - 10-second timeout on background message counting
