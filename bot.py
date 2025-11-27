@@ -2152,15 +2152,19 @@ async def check_partnerships(interaction: discord.Interaction):
             await interaction.followup.send("❌ Δεν βρέθηκε το partnership channel!", ephemeral=True)
             return
         
-        # Collect all partnership messages with links
+        # Collect all partnership messages with links and extract invite codes
+        import re
         partnerships = []
         async for message in partnership_channel.history(limit=300):
             content = message.content
             if 'discord.gg/' in content or 'discord.com/invite/' in content:
+                # Extract invite codes
+                invite_codes = re.findall(r'discord\.gg/(\w+)', content)
                 partnerships.append({
                     'author': message.author.name if message.author else 'Unknown',
                     'content': content,
-                    'timestamp': message.created_at
+                    'timestamp': message.created_at,
+                    'invite_codes': invite_codes
                 })
         
         if not partnerships:
@@ -2169,8 +2173,8 @@ async def check_partnerships(interaction: discord.Interaction):
         
         # Create report
         report_embed = discord.Embed(
-            title="🔍 Partnership Verification Report",
-            description=f"⏳ Ελέγχω {len(partnerships)} partnerships...",
+            title="🔍 Cross-Server Partnership Verification",
+            description=f"⏳ Ελέγχω {len(partnerships)} partnerships σε εξωτερικά servers...",
             color=discord.Color.blurple(),
             timestamp=datetime.now()
         )
@@ -2178,13 +2182,42 @@ async def check_partnerships(interaction: discord.Interaction):
         deleted_servers = []
         active_servers = []
         
-        for partnership in partnerships[:30]:
+        for partnership in partnerships[:20]:
             content_lower = partnership['content'].lower()
-            
-            # Έλεγχος: αν υπάρχει ένα από τα 5 links του mitsos = ΕΝΕΡΓΟ
             has_mitsos_link = any(link.lower() in content_lower for link in MITSOS_LINKS)
+            server_name = partnership['author']
             
-            if has_mitsos_link:
+            # Try to check each external server if bot is there
+            found_link_in_external_server = False
+            for invite_code in partnership.get('invite_codes', [])[:1]:  # Check first invite
+                try:
+                    # Try to get invite info
+                    invite = await bot.fetch_invite(invite_code, with_counts=True)
+                    external_guild = invite.guild
+                    
+                    if external_guild:
+                        # Check if bot is in this guild
+                        try:
+                            guild_obj = bot.get_guild(external_guild.id)
+                            if guild_obj:
+                                # Bot is in this guild - check channels for mitsos link
+                                for channel in guild_obj.text_channels[:5]:  # Check first 5 text channels
+                                    try:
+                                        async for msg in channel.history(limit=50):
+                                            if any(link in msg.content for link in MITSOS_LINKS):
+                                                found_link_in_external_server = True
+                                                break
+                                    except:
+                                        pass
+                                    if found_link_in_external_server:
+                                        break
+                        except:
+                            pass
+                except:
+                    pass
+            
+            # Final logic: active if link exists locally OR found in external server
+            if has_mitsos_link or found_link_in_external_server:
                 active_servers.append(partnership)
                 status = "✅"
             else:
@@ -2194,7 +2227,7 @@ async def check_partnerships(interaction: discord.Interaction):
             # Δείχνε τα πρώτα 12
             if len(report_embed.fields) < 12:
                 report_embed.add_field(
-                    name=f"{status} {partnership['author'][:25]}",
+                    name=f"{status} {server_name[:25]}",
                     value=f"📅 {partnership['timestamp'].strftime('%d/%m/%Y')}",
                     inline=True
                 )
