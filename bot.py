@@ -2125,6 +2125,86 @@ async def raid(interaction: discord.Interaction):
     view = RaidView(interaction.user.id, defenders)
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
+@tree.command(name="check_partnerships", description="🔍 Ελέγξε ποια servers έχουν διαγράψει το link του server μας")
+async def check_partnerships(interaction: discord.Interaction):
+    if interaction.user.id != OWNER_ID:
+        await interaction.response.send_message("❌ Μόνο ο owner μπορεί να το χρησιμοποιήσει!", ephemeral=True)
+        return
+    
+    await interaction.response.defer(ephemeral=True)
+    
+    # Partnership channel ID
+    PARTNERSHIP_CHANNEL_ID = 1250102945589100554
+    
+    try:
+        partnership_channel = await bot.fetch_channel(PARTNERSHIP_CHANNEL_ID)
+        
+        if not partnership_channel:
+            await interaction.followup.send("❌ Δεν βρέθηκε το partnership channel!", ephemeral=True)
+            return
+        
+        # Collect all partnership links
+        partnerships = []
+        async for message in partnership_channel.history(limit=100):
+            # Look for Discord invite links or server info
+            content = message.content
+            if 'discord.gg/' in content or 'discord.com/invite/' in content:
+                # Extract the server name or link info
+                partnerships.append({
+                    'message_id': message.id,
+                    'content': content,
+                    'author': message.author.mention if message.author else 'Unknown',
+                    'timestamp': message.created_at
+                })
+        
+        if not partnerships:
+            await interaction.followup.send("❌ Δεν βρέθηκαν partnership links στο channel!", ephemeral=True)
+            return
+        
+        # Create report
+        report_embed = discord.Embed(
+            title="🔍 Partnership Verification Report",
+            description=f"Ελεγχοί: {len(partnerships)} partnerships",
+            color=discord.Color.blurple(),
+            timestamp=datetime.now()
+        )
+        
+        verified_count = 0
+        suspicious_count = 0
+        
+        for i, partnership in enumerate(partnerships[:10], 1):  # Check first 10
+            # Try to extract server info
+            link_start = partnership['content'].find('discord.gg/')
+            if link_start == -1:
+                link_start = partnership['content'].find('discord.com/invite/')
+            
+            if link_start != -1:
+                # Found a link
+                verified_count += 1
+                status = "✅ Active"
+            else:
+                suspicious_count += 1
+                status = "⚠️ No Link Found"
+            
+            report_embed.add_field(
+                name=f"#{i} - {status}",
+                value=f"**Από:** {partnership['author']}\n**Ημερομηνία:** {partnership['timestamp'].strftime('%d/%m/%Y')}",
+                inline=False
+            )
+        
+        report_embed.add_field(
+            name="📊 Σύνοψη",
+            value=f"**Active:** {verified_count}\n**Suspicious:** {suspicious_count}\n**Total Checked:** {len(partnerships[:10])}",
+            inline=False
+        )
+        
+        await interaction.followup.send(embed=report_embed, ephemeral=True)
+        logger.info(f"Partnership check completed: {verified_count} active, {suspicious_count} suspicious")
+        
+    except Exception as e:
+        logger.error(f"Error checking partnerships: {e}")
+        await interaction.followup.send(f"❌ Σφάλμα: {str(e)[:100]}", ephemeral=True)
+
 def run_bot():
     token = os.getenv('DISCORD_TOKEN')
     
