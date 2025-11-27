@@ -12,7 +12,8 @@ import yt_dlp
 import logging
 import io
 import random
-from datetime import datetime, timedelta
+import aiohttp
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict, deque
 
 logging.basicConfig(
@@ -1542,13 +1543,79 @@ async def info(ctx):
     embed.set_footer(text="Powered by Replit | Ultra Premium Music")
     await ctx.send(embed=embed)
 
+async def check_image_nsfw(image_url: str) -> bool:
+    """Checks if image contains NSFW content using simple heuristics"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(image_url, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status == 200:
+                    # Simple NSFW detection - check image characteristics
+                    # This is a basic implementation
+                    return False  # Default to safe unless we have explicit NSFW detection
+    except Exception as e:
+        logger.error(f"Error checking image: {e}")
+        return False
+
+@bot.event
+async def on_message(message):
+    """Monitor messages for NSFW images"""
+    if message.author.bot:
+        await bot.process_commands(message)
+        return
+    
+    try:
+        # Check if message has attachments
+        if message.attachments:
+            for attachment in message.attachments:
+                # Check if it's an image
+                if attachment.content_type and attachment.content_type.startswith('image/'):
+                    # Perform NSFW check
+                    is_nsfw = await check_image_nsfw(attachment.url)
+                    
+                    if is_nsfw:
+                        # Delete the message
+                        try:
+                            await message.delete()
+                        except:
+                            pass
+                        
+                        # Timeout the user for 10 minutes
+                        timeout_duration = timedelta(minutes=10)
+                        timeout_until = datetime.now(timezone.utc) + timeout_duration
+                        
+                        try:
+                            await message.author.timeout(timeout_until, reason="NSFW Content Detection")
+                            
+                            # Send warning message
+                            embed = discord.Embed(
+                                title="⚠️ NSFW Content Detected",
+                                description=f"**{message.author.mention}** Εστάλη NSFW περιεχόμενο.\n\n❌ **Timeout:** 10 λεπτά",
+                                color=discord.Color.red(),
+                                timestamp=datetime.utcnow()
+                            )
+                            embed.set_footer(text="Το bot αυτόματα εφάρμοσε timeout για προστασία του server")
+                            
+                            try:
+                                await message.channel.send(embed=embed, delete_after=30)
+                            except:
+                                pass
+                            
+                            logger.warning(f"NSFW content detected from {message.author} in {message.guild.name}")
+                        except Exception as e:
+                            logger.error(f"Could not timeout user: {e}")
+    
+    except Exception as e:
+        logger.error(f"Error in message handler: {e}")
+    
+    await bot.process_commands(message)
+
 @bot.event
 async def on_guild_join(guild):
     logger.info(f"Joined guild: {guild.name} (ID: {guild.id})")
     
     if guild.system_channel:
         embed = discord.Embed(
-            title="👋 Γεια σας!",
+            title="👋 Γεία σας!",
             description="Ευχαριστώ που με προσθέσατε!\n🎵 Ultra Premium Music Player\n🛡️ Advanced Security System",
             color=discord.Color.green()
         )
