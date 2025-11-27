@@ -51,6 +51,24 @@ STAFF_ROLE_IDS = {
 }
 OWNER_ID = 839148474314129419
 
+# Recall tracking file
+RECALL_TRACKING_FILE = 'recall_tracking.json'
+
+def load_recall_tracking():
+    """Load recall tracking data"""
+    if os.path.exists(RECALL_TRACKING_FILE):
+        try:
+            with open(RECALL_TRACKING_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_recall_tracking(data):
+    """Save recall tracking data"""
+    with open(RECALL_TRACKING_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
 active_mutes = {}
 dm2_sent_count = 0
 
@@ -2192,6 +2210,11 @@ async def recall_members(interaction: discord.Interaction):
         return
     
     try:
+        # Load recall tracking
+        recall_tracking = load_recall_tracking()
+        if 'recalled' not in recall_tracking:
+            recall_tracking['recalled'] = []
+        
         # Get members who left in the last 30 days from audit logs
         left_members = []
         cutoff_time = datetime.now(timezone.utc) - timedelta(days=30)
@@ -2204,12 +2227,18 @@ async def recall_members(interaction: discord.Interaction):
             await interaction.followup.send("✅ Κανένας δεν έχει φύγει τις τελευταίες 30 μέρες!", ephemeral=True)
             return
         
-        # Send DMs to all left members
+        # Send DMs to members NOT already tracked
         server_link = "https://discord.gg/JtyjMmZ5n"
         sent_count = 0
         failed_count = 0
+        already_recalled = 0
         
         for member in left_members:
+            # Check if already recalled
+            if member.id in recall_tracking['recalled']:
+                already_recalled += 1
+                continue
+            
             try:
                 dm_embed = discord.Embed(
                     title="👋 Σας έχουμε ξεχάσει! 🎮",
@@ -2234,8 +2263,14 @@ async def recall_members(interaction: discord.Interaction):
                 
                 await member.send(embed=dm_embed)
                 sent_count += 1
+                
+                # Add to tracked
+                recall_tracking['recalled'].append(member.id)
             except:
                 failed_count += 1
+        
+        # Save tracking data
+        save_recall_tracking(recall_tracking)
         
         # Summary report
         report_embed = discord.Embed(
@@ -2245,27 +2280,33 @@ async def recall_members(interaction: discord.Interaction):
         )
         
         report_embed.add_field(
-            name="✅ Επιτυχής",
-            value=f"**{sent_count}** DMs απεστάλησαν",
+            name="✅ Νέα DMs",
+            value=f"**{sent_count}** απεστάλησαν",
+            inline=True
+        )
+        
+        report_embed.add_field(
+            name="⏭️ Ήδη Recalled",
+            value=f"**{already_recalled}** είχαν λάβει",
             inline=True
         )
         
         report_embed.add_field(
             name="❌ Αποτυχία",
-            value=f"**{failed_count}** DMs απέτυχαν",
+            value=f"**{failed_count}** απέτυχαν",
             inline=True
         )
         
         report_embed.add_field(
             name="📊 Σύνολο",
-            value=f"**{len(left_members)}** members",
-            inline=True
+            value=f"**{len(left_members)}** members τις τελευταίες 30 μέρες",
+            inline=False
         )
         
-        report_embed.set_footer(text=f"Server Link: {server_link}")
+        report_embed.set_footer(text=f"Server Link: {server_link} | Δεν θα ξανάστείλει σε ήδη recalled members!")
         
         await interaction.followup.send(embed=report_embed, ephemeral=True)
-        logger.info(f"Recall members: Sent {sent_count}/{len(left_members)} DMs")
+        logger.info(f"Recall members: Sent {sent_count}, Already {already_recalled}, Failed {failed_count}/{len(left_members)}")
         
     except Exception as e:
         logger.error(f"Error recalling members: {e}")
