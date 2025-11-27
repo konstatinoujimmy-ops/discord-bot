@@ -2416,26 +2416,26 @@ async def recall_stats(interaction: discord.Interaction):
         logger.error(f"Error getting recall stats: {e}")
         await interaction.followup.send(f"❌ Σφάλμα: {str(e)[:100]}", ephemeral=True)
 
-@tree.command(name="lock_members_for_recall", description="🔒 Κλείδωσε ΟΛΟΥΣ τους σημερινούς members για recall (ανοίγει DM κανάλια)")
+@tree.command(name="lock_members_for_recall", description="🔒 Κλείδωσε ΟΛΟΥΣ τους members (online & offline) για recall")
 @app_commands.check(recall_members_check)
 async def lock_members_for_recall(interaction: discord.Interaction):
-    """Ανοίγει DM κανάλια με ΟΛΟΥΣ τους τρέχοντες members για να δούμε ότι θα λάβουν DM αν φύγουν"""
+    """Ανοίγει DM κανάλια με ΟΛΟΥΣ τους members (online & offline) για recall 100%"""
     await interaction.response.defer(ephemeral=True)
     
     guild = interaction.guild
     
     try:
-        # Παίρνουμε ΟΛΟΥΣ τους members του server
-        all_members = guild.members
         contacted_members = load_contacted_members()
         
         locked_count = 0
         already_locked = 0
         failed_count = 0
+        total_members = 0
         
-        total_members = len(all_members)
-        
-        for i, member in enumerate(all_members):
+        # Παίρνουμε ΟΛΟΥΣ τους members (online & offline)
+        async for member in guild.fetch_members(limit=None):
+            total_members += 1
+            
             # Skip bots
             if member.bot:
                 continue
@@ -2455,8 +2455,7 @@ async def lock_members_for_recall(interaction: discord.Interaction):
                 locked_count += 1
                 
                 # Rate limiting: 2 seconds ανάμεσα σε κάθε μέλος (πιο γρήγορο από recall)
-                if i < len(all_members) - 1:
-                    await asyncio.sleep(2)
+                await asyncio.sleep(2)
                     
             except discord.Forbidden:
                 # User έχει κλειστά τα DMsΑλλά το ξαναπροσπαθούμε με recall
@@ -2467,8 +2466,8 @@ async def lock_members_for_recall(interaction: discord.Interaction):
         
         # Summary report
         report_embed = discord.Embed(
-            title="🔒 Lock Members Report",
-            description=f"DM κανάλια ανοίχτηκαν με members για future recall!",
+            title="🔒 Lock Members Report (Online + Offline)",
+            description=f"DM κανάλια ανοίχτηκαν με ΟΛΟΥΣ τους members για future recall!",
             color=discord.Color.from_rgb(0, 255, 100)
         )
         
@@ -2492,17 +2491,23 @@ async def lock_members_for_recall(interaction: discord.Interaction):
         
         report_embed.add_field(
             name="📊 Σύνολο",
-            value=f"**{total_members}** members στον server",
+            value=f"**{total_members}** members (ONLINE + OFFLINE)",
             inline=False
         )
         
         report_embed.add_field(
             name="🎯 Result",
-            value=f"✅ Σχεδόν **{locked_count + already_locked}** members είναι ready για recall!",
+            value=f"✅ **{locked_count + already_locked}** από {total_members} members είναι ready για recall!",
             inline=False
         )
         
-        report_embed.set_footer(text="Όταν κάνεις /recall_members, όλοι θα πάρουν DM 100%!")
+        report_embed.add_field(
+            name="📌 Info",
+            value=f"🟢 Online & Offline παίρνουν όλοι DM όταν φύγουν!",
+            inline=False
+        )
+        
+        report_embed.set_footer(text="Όταν κάνεις /recall_members, θα στείλει σε όλους!")
         
         await interaction.followup.send(embed=report_embed, ephemeral=True)
         logger.info(f"Lock members: Locked {locked_count}, Already {already_locked}, Failed {failed_count}/{total_members}")
