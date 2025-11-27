@@ -2164,6 +2164,11 @@ class RaidView(discord.ui.View):
         attacker_power = attacker_data['points']
         defender_power = defender_data['points']
         
+        # Get character info
+        attacker_char = ANIME_CHARACTERS[attacker_data['char_id']]
+        defender_char = ANIME_CHARACTERS[defender_data['char_id']]
+        defender_user = guild.get_member(defender_id)
+        
         # Battle result based on power difference
         # Avoid division by zero
         power_ratio = attacker_power / max(1, defender_power)
@@ -2194,9 +2199,10 @@ class RaidView(discord.ui.View):
             attacker_data['points'] += stolen_points
             defender_data['points'] = max(0, defender_data['points'] - stolen_points)
             
-            result_text = f"🎉 **ΝΙΚΗ!** Έκλεψες {stolen_points} points από τον εχθρό!\n"
-            result_text += f"**Δικά σου points:** {attacker_data['points']} ⭐\n"
-            result_text += f"**Points εχθρού:** {defender_data['points']} ⭐"
+            result_title = f"🎉 **ΝΙΚΗ!** {attacker_char['name']} έκλεψε {stolen_points} points!"
+            result_text = f"**Attacker:** {attacker_char['name']} ({attacker_data['points']} ⭐)\n"
+            result_text += f"**Defender:** {defender_char['name']} ({defender_data['points']} ⭐)\n\n"
+            result_text += f"💰 {stolen_points} points κλάπηκαν!"
             color = discord.Color.green()
         else:
             # Defender wins - steals 50% of attacker's points
@@ -2204,17 +2210,45 @@ class RaidView(discord.ui.View):
             defender_data['points'] += stolen_points
             attacker_data['points'] = max(0, attacker_data['points'] - stolen_points)
             
-            result_text = f"❌ **ΗΤΤΑ!** Ο εχθρός σε νίκησε και σου έκλεψε {stolen_points} points!\n"
-            result_text += f"**Δικά σου points:** {attacker_data['points']} ⭐\n"
-            result_text += f"**Points εχθρού:** {defender_data['points']} ⭐"
+            result_title = f"❌ **ΗΤΤΑ!** {defender_char['name']} νίκησε και έκλεψε {stolen_points} points!"
+            result_text = f"**Attacker:** {attacker_char['name']} ({attacker_data['points']} ⭐)\n"
+            result_text += f"**Defender:** {defender_char['name']} ({defender_data['points']} ⭐)\n\n"
+            result_text += f"💰 {stolen_points} points κλάπηκαν!"
             color = discord.Color.red()
         
+        # Create rich embed with both characters
         embed = discord.Embed(
             title="⚔️ Raid Battle Result",
-            description=result_text,
+            description=result_title,
             color=color,
             timestamp=datetime.utcnow()
         )
+        
+        # Add attacker character info
+        embed.add_field(
+            name=f"⚔️ Attacker: {interaction.user.name}",
+            value=f"**{attacker_char['name']}** ({attacker_char['series']})\n{attacker_data['points']} ⭐ Points",
+            inline=True
+        )
+        
+        # Add defender character info
+        defender_name = defender_user.name if defender_user else "Unknown"
+        embed.add_field(
+            name=f"🛡️ Defender: {defender_name}",
+            value=f"**{defender_char['name']}** ({defender_char['series']})\n{defender_data['points']} ⭐ Points",
+            inline=True
+        )
+        
+        # Add battle details
+        embed.add_field(
+            name="⚡ Battle Details",
+            value=result_text,
+            inline=False
+        )
+        
+        # Set images side by side
+        embed.set_image(url=attacker_char['image'])
+        embed.set_thumbnail(url=defender_char['image'])
         
         save_anime_data()  # Save raid results
         await interaction.response.edit_message(embed=embed, view=None)
