@@ -13,6 +13,7 @@ import logging
 import io
 import random
 import aiohttp
+import json
 from datetime import datetime, timedelta, timezone
 from collections import defaultdict, deque
 from anime_data import ANIME_CHARACTERS, get_random_characters
@@ -69,6 +70,29 @@ infractions_db = {}  # {guild_id: {user_id: [{'type': 'NSFW'|'TIMEOUT'|'MUTE'|'K
 # Anime Character System
 anime_characters = {}  # {guild_id: {user_id: {'char_id': X, 'points': Y, 'message_count': Z}}}
 user_message_counts = {}  # {guild_id: {user_id: message_count}}
+
+# Persistent storage file
+DATA_FILE = "anime_data.json"
+
+def load_anime_data():
+    """Load anime characters from file"""
+    global anime_characters
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r') as f:
+                anime_characters = json.load(f)
+                logger.info(f"✅ Loaded anime data for {sum(len(v) for v in anime_characters.values())} users")
+    except Exception as e:
+        logger.error(f"Error loading anime data: {e}")
+        anime_characters = {}
+
+def save_anime_data():
+    """Save anime characters to file"""
+    try:
+        with open(DATA_FILE, 'w') as f:
+            json.dump(anime_characters, f, indent=2)
+    except Exception as e:
+        logger.error(f"Error saving anime data: {e}")
 
 def parse_duration(duration_str: str) -> int:
     """
@@ -274,6 +298,9 @@ class GiveawayView(discord.ui.View):
 
 @bot.event
 async def on_ready():
+    # Load persistent anime character data
+    load_anime_data()
+    
     try:
         synced = await tree.sync()
         logger.info(f"✅ Synced {len(synced)} slash commands")
@@ -1828,6 +1855,7 @@ async def on_message(message):
         if guild.id in anime_characters and message.author.id in anime_characters[guild.id]:
             anime_characters[guild.id][message.author.id]['points'] = user_message_counts[guild.id][message.author.id]
             anime_characters[guild.id][message.author.id]['message_count'] = user_message_counts[guild.id][message.author.id]
+            save_anime_data()  # Save after each message
     
     try:
         # Check if message has attachments
@@ -2023,6 +2051,7 @@ class AnimeCharacterView(discord.ui.View):
         # Update with actual count
         anime_characters[guild.id][user.id]['points'] = message_count
         anime_characters[guild.id][user.id]['message_count'] = message_count
+        save_anime_data()  # Save to file
         
         embed = discord.Embed(
             title=f"🎌 Επέλεξες: {char['name']}!",
@@ -2098,6 +2127,7 @@ class RaidView(discord.ui.View):
             timestamp=datetime.utcnow()
         )
         
+        save_anime_data()  # Save raid results
         await interaction.response.edit_message(embed=embed, view=None)
 
 @tree.command(name="my_anime_character", description="🎌 Διάλεξε τον anime character σου και γίνε πιο δυνατός!")
