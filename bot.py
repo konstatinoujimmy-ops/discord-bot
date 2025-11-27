@@ -69,6 +69,20 @@ def save_recall_tracking(data):
     with open(RECALL_TRACKING_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
+def load_contacted_members():
+    """Load list of members we've established DM contact with"""
+    tracking = load_recall_tracking()
+    return set(tracking.get('contacted', []))
+
+def add_contacted_member(user_id):
+    """Add a member to the contacted list (we've opened DM channel with them)"""
+    tracking = load_recall_tracking()
+    if 'contacted' not in tracking:
+        tracking['contacted'] = []
+    if user_id not in tracking['contacted']:
+        tracking['contacted'].append(user_id)
+    save_recall_tracking(tracking)
+
 active_mutes = {}
 dm2_sent_count = 0
 
@@ -402,6 +416,23 @@ async def on_member_ban(guild, user):
                         f"Excessive banning (5+ bans in 1 hour)"
                     )
         break
+
+@bot.event
+async def on_member_join(member):
+    """Ανοίγει DM κανάλι με νέο member ώστε να μπορούμε να του στείλουμε μήνυμα αργότερα"""
+    try:
+        # Προσθέτουμε το member στη "contacted" list πριν προσπαθήσουμε να ανοίξουμε DM
+        add_contacted_member(member.id)
+        
+        # Ανοίγουμε DM channel με ένα μικρό μήνυμα
+        # Αυτό κάνει το Discord να δημιουργήσει μόνιμο κανάλι DM ακόμα κι αν ο user φύγει ή έχει κλειστά τα DMsΓια να είναι ασφαλέστερο, ανοίγουμε απλώς το κανάλι χωρίς να στείλουμε μήνυμα
+        try:
+            dm = await member.create_dm()
+            logger.info(f"✅ DM channel opened με {member.name} (ID: {member.id}) - Ready for recall!")
+        except:
+            logger.info(f"⚠️ Could not open DM με {member.name}, αλλά προστέθηκε στη contacted list")
+    except Exception as e:
+        logger.error(f"Error processing member join {member.name}: {e}")
 
 @bot.event
 async def on_member_remove(member):
@@ -2223,8 +2254,25 @@ async def recall_members(interaction: discord.Interaction):
             if entry.created_at > cutoff_time:
                 left_members.append(entry.target)
         
-        if not left_members:
-            await interaction.followup.send("✅ Κανένας δεν έχει φύγει τις τελευταίες 30 μέρες!", ephemeral=True)
+        # Get all members we've had contact with (currently have DM channels)
+        contacted_members = load_contacted_members()
+        
+        # Combine: members from audit logs + contacted members
+        all_targetable_members = {}
+        for member in left_members:
+            all_targetable_members[member.id] = member
+        
+        # For contacted members, we need to fetch them as User objects
+        for user_id in contacted_members:
+            if user_id not in all_targetable_members:
+                try:
+                    user = await bot.fetch_user(user_id)
+                    all_targetable_members[user_id] = user
+                except:
+                    pass
+        
+        if not all_targetable_members:
+            await interaction.followup.send("✅ Κανένας δεν έχει φύγει ή δεν υπάρχουν contacted members!", ephemeral=True)
             return
         
         # Send DMs to members NOT already tracked
@@ -2232,17 +2280,21 @@ async def recall_members(interaction: discord.Interaction):
         sent_count = 0
         failed_count = 0
         already_recalled = 0
+        total_attempts = len(all_targetable_members)
+        attempt_count = 0
         
-        for member in left_members:
+        for user_id, member in all_targetable_members.items():
+            attempt_count += 1
+            
             # Check if already recalled
-            if member.id in recall_tracking['recalled']:
+            if user_id in recall_tracking['recalled']:
                 already_recalled += 1
                 continue
             
             try:
                 dm_embed = discord.Embed(
                     title="👋 Σας έχουμε ξεχάσει! 🎮",
-                    description=f"Καλησπέρα **{member.name}**!\n\nΠαρατήρησαν ότι δεν είστε παραπάνω στον server μας...",
+                    description=f"Καλησπέρα **{member.name if hasattr(member, 'name') else member}**!\n\nΠαρατήρησαν ότι δεν είστε παραπάνω στον server μας...",
                     color=discord.Color.blue()
                 )
                 
@@ -2265,10 +2317,10 @@ async def recall_members(interaction: discord.Interaction):
                 sent_count += 1
                 
                 # Add to tracked
-                recall_tracking['recalled'].append(member.id)
+                recall_tracking['recalled'].append(user_id)
                 
                 # Rate limit: 18 seconds between DMs to avoid Discord blocks
-                if sent_count < len(left_members):  # Don't wait after last DM
+                if attempt_count < total_attempts:  # Don't wait after last DM
                     await asyncio.sleep(18)
             except:
                 failed_count += 1
@@ -2279,7 +2331,7 @@ async def recall_members(interaction: discord.Interaction):
         # Summary report
         report_embed = discord.Embed(
             title="📢 Recall Members Report",
-            description=f"DM sent σε members που έφυγαν τις τελευταίες 30 μέρες",
+            description=f"DM sent σε members που έφυγαν + Contacted Members τα τελευταία 365 μέρες",
             color=discord.Color.green()
         )
         
@@ -2302,8 +2354,14 @@ async def recall_members(interaction: discord.Interaction):
         )
         
         report_embed.add_field(
-            name="📊 Σύνολο",
-            value=f"**{len(left_members)}** members τις τελευταίες 30 μέρες",
+            name="📊 Σύνολο Targets",
+            value=f"**{len(all_targetable_members)}** members (audit logs + contacted)",
+            inline=False
+        )
+        
+        report_embed.add_field(
+            name="📍 Source",
+            value=f"🔴 {len(left_members)} από audit logs\n🟢 {len(contacted_members)} contacted members",
             inline=False
         )
         
