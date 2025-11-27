@@ -2266,6 +2266,10 @@ async def recall_members(interaction: discord.Interaction):
                 
                 # Add to tracked
                 recall_tracking['recalled'].append(member.id)
+                
+                # Rate limit: 18 seconds between DMs to avoid Discord blocks
+                if sent_count < len(left_members):  # Don't wait after last DM
+                    await asyncio.sleep(18)
             except:
                 failed_count += 1
         
@@ -2303,7 +2307,7 @@ async def recall_members(interaction: discord.Interaction):
             inline=False
         )
         
-        report_embed.set_footer(text=f"Server Link: {server_link} | Δεν θα ξανάστείλει σε ήδη recalled members!")
+        report_embed.set_footer(text=f"Server Link: {server_link} | 18s delay ανάμεσα στα DMs (anti-block) | Δεν θα ξανάστείλει!")
         
         await interaction.followup.send(embed=report_embed, ephemeral=True)
         logger.info(f"Recall members: Sent {sent_count}, Already {already_recalled}, Failed {failed_count}/{len(left_members)}")
