@@ -2454,8 +2454,8 @@ async def lock_members_for_recall(interaction: discord.Interaction):
                 
                 locked_count += 1
                 
-                # Rate limiting: 2 seconds ανάμεσα σε κάθε μέλος (πιο γρήγορο από recall)
-                await asyncio.sleep(2)
+                # Rate limiting: 0.8 seconds ανάμεσα σε κάθε μέλος (~16 λεπτά για 1200 members)
+                await asyncio.sleep(0.8)
                     
             except discord.Forbidden:
                 # User έχει κλειστά τα DMsΑλλά το ξαναπροσπαθούμε με recall
