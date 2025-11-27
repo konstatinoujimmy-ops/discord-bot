@@ -7,137 +7,108 @@ This is a 24/7 Discord bot designed to run continuously on Bot-Hosting.net with 
 Preferred communication style: Simple, everyday language - Greek only, no Portuguese or English.
 Device: Mobile only - requires simple step-by-step guidance with visual confirmations.
 
-## Recent Changes (November 27, 2025)
-- **ANIME CHARACTER SYSTEM**: Complete gamification system with 52 viral anime characters
-- Players can use `/my_anime_character` to select from 3 random unique characters (different for each player)
-- Each character displays its image automatically when selected
-- Character power increases with every message sent (1 message = 1 power point)
-- `/raid` command enables PvP battles between characters with 50% point theft on victory
-- Real-time points calculation based on message count
-- Battle system with 50% base win chance (influenced by power levels)
-- `/infractions` and `/add_infraction` commands for tracking user violations
-- Manual infraction addition with multiple types (NSFW, TIMEOUT, MUTE, KICK, BAN)
-- Created anime_data.py with 52 viral anime characters from Naruto, One Piece, Dragon Ball, Demon Slayer, My Hero Academia, JoJo's, Fairy Tail, Death Note, Bleach, Attack on Titan, Jujutsu Kaisen, Re:Zero, and more
+## Recent Changes (November 27, 2025 - Latest)
+- **ANIME CHARACTER SYSTEM COMPLETE**: Full gamification system with 52 viral anime characters
+- **Character Selection**: `/my_anime_character` command with 3 random unique options per user
+- **Character Display**: Each character shows image + series name + stats
+- **Historical Message Counting**: Automatically counts all past messages (up to 50k per channel) when character is selected
+- **Stats Display**: Shows Points ⭐, Message Count 📝, Power Level 💪% with formatted numbers
+- **Persistent Stats**: When user re-runs `/my_anime_character`, shows their current character with all stats
+- **Power Calculation**: Power Level = Message Count × 0.1%
+- **Raid System**: `/raid` command to battle other players' characters
+- **Point Theft Mechanic**: Winner takes 50% of loser's points in raid battles
+- **Real-time Updates**: Message counter updates character power automatically
+- **Complete Infraction Tracking**: `/infractions` and `/add_infraction` commands with violation history
 
-## Previous Changes (November 2025)
-- Successfully deployed bot to Bot-Hosting.net with 6 core files
-- Fixed DISCORD_TOKEN loading using python-dotenv in start.py
-- Implemented partnership system with approval workflow (validates 450+ member requirement)
-- Created NSFW detection system with automatic 10-minute timeout
-- Added role-based permissions (role ID: 1162022515846172723)
+## System Architecture - Anime Gamification
 
-# System Architecture
+**Core Features:**
+- 52+ viral anime characters database with images
+- Per-guild, per-user character selection system
+- Historical message counting from Discord history
+- Real-time message tracking for power increments
+- PvP raid battle system with point economy
+- Persistent character and stats storage (in-memory)
 
-## Core Components
+**Character Selection Flow:**
+1. User runs `/my_anime_character`
+2. If new: Shows 3 random characters (different for each user)
+3. User selects character → Shows "🔄 Υπολογίζω..."
+4. Bot counts all past messages in background
+5. Character assigned with starting points = message count
+6. Future messages = +1 point each
 
-**Bot Architecture**: Discord.py with command-based architecture. Main logic in `bot.py`, entry point in `main.py` or `start.py` for Bot-Hosting.net compatibility.
+**Stats Display:**
+- **Points**: Total accumulated power (starts from message count)
+- **Message Count**: Total messages ever sent
+- **Power Level**: message_count × 0.1 (percentage)
+- **Character Image**: Visual representation of chosen anime character
+- **Series Name**: Show which anime series the character is from
 
-**Anime Character System**: 
-- 52+ viral anime characters database in `anime_data.py`
-- Per-user character selection with unique 3-character choices per user
-- Message-based power progression system
-- PvP raid battles with point theft mechanics
-- Database: `anime_characters` (guild_id → user_id → character data)
+**Raid Battle System:**
+- Shows list of all other players with characters
+- Player selects opponent
+- Battle result: 50% win chance base (adjusted by power)
+- Winner gains 50% of loser's points
+- Real-time point transfer
 
-**Keep-Alive Mechanism**: Flask web server for health checks (Replit compatibility).
-
-**Threading Model**: Concurrent Discord bot and Flask server execution.
-
-**Error Handling**: Global error handlers with automatic recovery.
-
-**Logging System**: Centralized INFO-level logging to console.
-
-## Anime Gamification System
-
-**Character Selection** (`/my_anime_character`):
-- First-time users see 3 random unique characters from 52+ database
-- Each user gets different random selection (no duplicates between users)
-- Selected character displays with series name and image
-- Starting power: 0 points
-
-**Power System**:
-- Every message = +1 point to character power
-- Points tracked globally for raid battles
-- Persistent across commands
-
-**Raid System** (`/raid`):
-- Battle against other players' characters
-- View all active characters with their power levels
-- 50% base win chance (adjusted by power differential)
-- Winner takes 50% of loser's points
-- Real-time point transfers
-
-**Violation Tracking**:
-- `/infractions @user`: View complete violation history
-- `/add_infraction @user TYPE reason`: Manual violation recording (Owner-only)
+**Infraction System:**
+- Manual tracking with `/add_infraction`
 - Types: NSFW, TIMEOUT, MUTE, KICK, BAN
-- Automatic NSFW tracking with 10-minute timeout
-- Persistent violation database per guild
-
-## Design Patterns
-
-**Configuration Management**: Environment variables for Discord token (DISCORD_TOKEN).
-
-**Event-Driven Architecture**: Discord events (on_message, on_raid, etc.) trigger business logic.
-
-**View-Based UI**: Discord.py Views for button interactions (AnimeCharacterView, RaidView).
-
-**Game State Management**: In-memory databases for real-time character and raid data.
+- View history with `/infractions @user`
+- Automatic NSFW detection with timeout
 
 # External Dependencies
 
 ## Core Libraries
 - **discord.py**: Discord API wrapper
-- **discord.ui**: Button/View components for interactive UI
+- **discord.ui**: Button/View components
 - **flask**: Web server (keep-alive)
 - **yt-dlp**: YouTube video downloading
-- **python-dotenv**: Environment variable loading
-- **Standard libraries**: random, asyncio, datetime, logging, threading
+- **python-dotenv**: Environment variables
+- **asyncio, random, logging**: Standard utilities
 
-## Anime Characters Database
-52+ viral characters from:
-- Naruto (Naruto, Sasuke, etc.)
-- One Piece (Luffy, Zoro, Nami, Sanji, etc.)
-- Dragon Ball (Goku, Vegeta, Frieza, Cell, etc.)
-- Demon Slayer (Tanjiro, Nezuko, etc.)
-- My Hero Academia (Deku, Bakugo, All Might, etc.)
-- JoJo's Bizarre Adventure (Jotaro, DIO, Giorno, etc.)
-- Fairy Tail (Natsu, Erza, Gray, etc.)
-- Death Note (Light, L, Ryuk, Misa)
-- Bleach (Ichigo, Kenpachi, etc.)
-- Attack on Titan (Eren, Levi, Mikasa, Colossal Titan, etc.)
-- Jujutsu Kaisen (Sukuna, Gojo, Yuji, etc.)
-- Re:Zero (Rem, Emilia, etc.)
+## Anime Characters Database (52+ total)
+- Naruto: Naruto, Sasuke, Kakashi
+- One Piece: Luffy, Zoro, Nami, Sanji, Chopper, Robin, Franky, Brook, Jinbe
+- Dragon Ball: Goku, Vegeta, Frieza, Cell, Majin Buu, Androids, Piccolo, Krillin, etc.
+- Demon Slayer: Tanjiro, Nezuko
+- My Hero Academia: Deku, Bakugo, Todoroki, All Might
+- JoJo's: Jotaro, DIO, Giorno
+- Fairy Tail: Natsu, Erza, Gray, Acnologia
+- Death Note: Light, L, Ryuk, Misa
+- Bleach: Ichigo, etc.
+- Attack on Titan: Eren, Levi, Mikasa, Colossal Titan
+- Jujutsu Kaisen: Sukuna, Gojo, Yuji
+- Re:Zero: Rem, Emilia
 
-## External Services
-- **Discord API**: Bot communication and events
-- **Bot-Hosting.net**: Production deployment platform
-- **YouTube (yt-dlp)**: Music streaming via /play command
-- **Image URLs**: Character images from pinimg.com (placeholder URLs in anime_data.py)
+# Important Technical Notes
 
-## Important Technical Notes
+**Data Storage:**
+- `anime_characters`: {guild_id: {user_id: {'char_id': X, 'points': Y, 'message_count': Z}}}
+- `user_message_counts`: {guild_id: {user_id: message_count}}
+- In-memory only (resets on bot restart - consider persistent storage for production)
 
-**In-Memory Storage**: 
-- `anime_characters`: Character selections and points (per guild)
-- `user_message_counts`: Message tracking for power calculation
-- `nsfw_violations`: NSFW violation tracking
-- `infractions_db`: User infraction history
-- Data persists during bot runtime but resets on restart (consider persistent storage for production)
+**Message Counting Algorithm:**
+- Iterates max 20 channels per server (avoid rate limits)
+- Reads max 50,000 messages per channel
+- Updates character points with total count
+- Respects Discord rate limiting
 
-**Raid Battle Logic**:
+**Raid Battle Logic:**
 - Base 50% win probability
-- Adjusted by: if attacker_power > defender_power * 0.8 → attacker wins
-- Point theft: 50% of defender's current points
+- Adjusted if attacker_power > defender_power × 0.8 → attacker wins
+- Point theft: 50% of defender's current points transferred to winner
+- Loser's points can go to 0 minimum
 
-**Message Counter Integration**:
-- Integrated into existing `on_message` event handler
-- Tracks message count per user per guild
-- Updates character power in real-time
-- Only counts messages from users with selected characters
+**Message Integration:**
+- Every message from any user tracked in real-time
+- Character power increases if user has selected a character
+- Message counting in `on_message` event handler
+- Seamless integration with existing bot events
 
-**Infraction Types**:
-- NSFW: Automatic detection and manual addition
-- TIMEOUT: Manual record
-- MUTE: Manual record
-- KICK: Manual record
-- BAN: Manual record
+**Performance Considerations:**
+- 10-second timeout on background message counting
+- Max 20 channels + 50k messages limit per channel
+- Async/await for non-blocking operations
+- Error handling for rate limits and permission issues

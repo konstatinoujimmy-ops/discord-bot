@@ -2077,12 +2077,20 @@ async def my_anime_character(interaction: discord.Interaction):
         points = anime_characters[guild.id][interaction.user.id]['points']
         msg_count = anime_characters[guild.id][interaction.user.id]['message_count']
         
+        # Calculate power level
+        power_level = int(msg_count * 0.1) if msg_count > 0 else 0
+        
         embed = discord.Embed(
             title=f"🎌 Ο Character σου: {char['name']}",
-            description=f"**Series:** {char['series']}\n**Points:** {points} ⭐\n**Messages:** {msg_count}📝",
+            description=f"**Series:** {char['series']}",
             color=discord.Color.gold()
         )
+        embed.add_field(name="⭐ Points", value=f"{points:,}", inline=True)
+        embed.add_field(name="📝 Messages", value=f"{msg_count:,}", inline=True)
+        embed.add_field(name="💪 Power Level", value=f"{power_level}%", inline=True)
         embed.set_image(url=char['image'])
+        embed.set_footer(text="Κάθε μήνυμα = +1 Power | /raid για μάχη!")
+        
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
     
