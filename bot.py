@@ -82,7 +82,7 @@ def load_anime_data():
             with open(DATA_FILE, 'r') as f:
                 data = json.load(f)
                 # Convert string keys to integers
-                anime_characters = {}
+                anime_characters.clear()  # Clear existing data
                 for guild_id_str, users in data.items():
                     guild_id = int(guild_id_str)
                     anime_characters[guild_id] = {}
@@ -90,9 +90,10 @@ def load_anime_data():
                         user_id = int(user_id_str)
                         anime_characters[guild_id][user_id] = char_data
                 logger.info(f"✅ Loaded anime data for {sum(len(v) for v in anime_characters.values())} users")
+        else:
+            logger.info("📄 No anime_data.json file found - starting fresh")
     except Exception as e:
         logger.error(f"Error loading anime data: {e}")
-        anime_characters = {}
 
 def save_anime_data():
     """Save anime characters to file"""
