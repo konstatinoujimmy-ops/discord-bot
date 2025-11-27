@@ -2416,6 +2416,101 @@ async def recall_stats(interaction: discord.Interaction):
         logger.error(f"Error getting recall stats: {e}")
         await interaction.followup.send(f"❌ Σφάλμα: {str(e)[:100]}", ephemeral=True)
 
+@tree.command(name="lock_members_for_recall", description="🔒 Κλείδωσε ΟΛΟΥΣ τους σημερινούς members για recall (ανοίγει DM κανάλια)")
+@app_commands.check(recall_members_check)
+async def lock_members_for_recall(interaction: discord.Interaction):
+    """Ανοίγει DM κανάλια με ΟΛΟΥΣ τους τρέχοντες members για να δούμε ότι θα λάβουν DM αν φύγουν"""
+    await interaction.response.defer(ephemeral=True)
+    
+    guild = interaction.guild
+    
+    try:
+        # Παίρνουμε ΟΛΟΥΣ τους members του server
+        all_members = guild.members
+        contacted_members = load_contacted_members()
+        
+        locked_count = 0
+        already_locked = 0
+        failed_count = 0
+        
+        total_members = len(all_members)
+        
+        for i, member in enumerate(all_members):
+            # Skip bots
+            if member.bot:
+                continue
+            
+            # Check if already locked
+            if member.id in contacted_members:
+                already_locked += 1
+                continue
+            
+            try:
+                # Ανοίγουμε DM κανάλι
+                dm = await member.create_dm()
+                
+                # Προσθέτουμε στη contacted list
+                add_contacted_member(member.id)
+                
+                locked_count += 1
+                
+                # Rate limiting: 2 seconds ανάμεσα σε κάθε μέλος (πιο γρήγορο από recall)
+                if i < len(all_members) - 1:
+                    await asyncio.sleep(2)
+                    
+            except discord.Forbidden:
+                # User έχει κλειστά τα DMsΑλλά το ξαναπροσπαθούμε με recall
+                failed_count += 1
+            except Exception as e:
+                failed_count += 1
+                logger.error(f"Error locking member {member.name}: {e}")
+        
+        # Summary report
+        report_embed = discord.Embed(
+            title="🔒 Lock Members Report",
+            description=f"DM κανάλια ανοίχτηκαν με members για future recall!",
+            color=discord.Color.from_rgb(0, 255, 100)
+        )
+        
+        report_embed.add_field(
+            name="✅ Νέα Locked",
+            value=f"**{locked_count}** members",
+            inline=True
+        )
+        
+        report_embed.add_field(
+            name="🔐 Ήδη Locked",
+            value=f"**{already_locked}** members",
+            inline=True
+        )
+        
+        report_embed.add_field(
+            name="❌ Failed",
+            value=f"**{failed_count}** members",
+            inline=True
+        )
+        
+        report_embed.add_field(
+            name="📊 Σύνολο",
+            value=f"**{total_members}** members στον server",
+            inline=False
+        )
+        
+        report_embed.add_field(
+            name="🎯 Result",
+            value=f"✅ Σχεδόν **{locked_count + already_locked}** members είναι ready για recall!",
+            inline=False
+        )
+        
+        report_embed.set_footer(text="Όταν κάνεις /recall_members, όλοι θα πάρουν DM 100%!")
+        
+        await interaction.followup.send(embed=report_embed, ephemeral=True)
+        logger.info(f"Lock members: Locked {locked_count}, Already {already_locked}, Failed {failed_count}/{total_members}")
+        
+    except Exception as e:
+        logger.error(f"Error locking members: {e}")
+        await interaction.followup.send(f"❌ Σφάλμα: {str(e)[:100]}", ephemeral=True)
+
 @tree.command(name="check_partnerships", description="📊 Μέτρησε πόσα server links υπάρχουν στο partnership channel")
 async def check_partnerships(interaction: discord.Interaction):
     # Check if user is owner or has zeno role
