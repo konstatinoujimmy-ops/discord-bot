@@ -2143,63 +2143,72 @@ async def check_partnerships(interaction: discord.Interaction):
             await interaction.followup.send("❌ Δεν βρέθηκε το partnership channel!", ephemeral=True)
             return
         
-        # Collect all partnership links
+        # Collect all partnership links and server references
         partnerships = []
-        async for message in partnership_channel.history(limit=100):
-            # Look for Discord invite links or server info
+        async for message in partnership_channel.history(limit=200):
             content = message.content
-            if 'discord.gg/' in content or 'discord.com/invite/' in content:
-                # Extract the server name or link info
+            # Look for Discord server names or links
+            if 'discord.gg/' in content or 'discord.com/invite/' in content or '@' in content:
                 partnerships.append({
                     'message_id': message.id,
                     'content': content,
-                    'author': message.author.mention if message.author else 'Unknown',
+                    'author': message.author.name if message.author else 'Unknown',
                     'timestamp': message.created_at
                 })
         
         if not partnerships:
-            await interaction.followup.send("❌ Δεν βρέθηκαν partnership links στο channel!", ephemeral=True)
+            await interaction.followup.send("❌ Δεν βρέθηκαν partnership links!", ephemeral=True)
             return
         
         # Create report
         report_embed = discord.Embed(
-            title="🔍 Partnership Verification Report",
-            description=f"Ελεγχοί: {len(partnerships)} partnerships",
+            title="🔍 Partnership Link Verification Report",
+            description=f"⏳ Ελέγχω {len(partnerships)} partnerships για διαγραφές...",
             color=discord.Color.blurple(),
             timestamp=datetime.now()
         )
         
-        verified_count = 0
-        suspicious_count = 0
+        deleted_links = []
+        active_links = []
         
-        for i, partnership in enumerate(partnerships[:10], 1):  # Check first 10
-            # Try to extract server info
-            link_start = partnership['content'].find('discord.gg/')
-            if link_start == -1:
-                link_start = partnership['content'].find('discord.com/invite/')
+        # Check each partnership message for our server link
+        # Looking for "dragon ball" or our invite link specifically
+        our_server_keywords = ['dragon ball', 'discord.gg/', 'our link', 'server link']
+        
+        for i, partnership in enumerate(partnerships[:15]):
+            content_lower = partnership['content'].lower()
+            has_link = any(keyword in content_lower for keyword in our_server_keywords)
             
-            if link_start != -1:
-                # Found a link
-                verified_count += 1
-                status = "✅ Active"
+            if has_link:
+                active_links.append(partnership)
+                status = "✅ Ενεργό"
             else:
-                suspicious_count += 1
-                status = "⚠️ No Link Found"
+                deleted_links.append(partnership)
+                status = "❌ ΔΙΑΓΡΑΜΜΕΝΟ"
             
-            report_embed.add_field(
-                name=f"#{i} - {status}",
-                value=f"**Από:** {partnership['author']}\n**Ημερομηνία:** {partnership['timestamp'].strftime('%d/%m/%Y')}",
-                inline=False
-            )
+            if len(deleted_links) + len(active_links) <= 12:
+                report_embed.add_field(
+                    name=f"{status} - {partnership['author'][:20]}",
+                    value=f"📅 {partnership['timestamp'].strftime('%d/%m/%Y')}\n`{partnership['content'][:50]}...`",
+                    inline=False
+                )
         
         report_embed.add_field(
-            name="📊 Σύνοψη",
-            value=f"**Active:** {verified_count}\n**Suspicious:** {suspicious_count}\n**Total Checked:** {len(partnerships[:10])}",
+            name="📊 Σύνοψη Ελέγχου",
+            value=f"✅ **Ενεργά:** {len(active_links)}\n❌ **Διαγραμμένα:** {len(deleted_links)}\n📋 **Σύνολο:** {len(partnerships[:15])}",
             inline=False
         )
         
+        if deleted_links:
+            deleted_names = ", ".join([p['author'] for p in deleted_links[:5]])
+            report_embed.add_field(
+                name="⚠️ ΠΡΟΣΟΧΗ - Διαγραμμένα Links",
+                value=f"Αυτοί οι servers έχουν διαγράψει το link σας:\n• {deleted_names}",
+                inline=False
+            )
+        
         await interaction.followup.send(embed=report_embed, ephemeral=True)
-        logger.info(f"Partnership check completed: {verified_count} active, {suspicious_count} suspicious")
+        logger.info(f"Partnership check: {len(active_links)} active, {len(deleted_links)} deleted")
         
     except Exception as e:
         logger.error(f"Error checking partnerships: {e}")
