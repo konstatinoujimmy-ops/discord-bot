@@ -130,18 +130,15 @@ ytdl_format_options = {
     'no_warnings': True,
     'default_search': 'ytsearch',
     'source_address': '0.0.0.0',
-    'extractaudio': True,
-    'audioformat': 'opus',
-    'audioquality': 0,
-    'prefer_ffmpeg': True,
+    'socket_timeout': 30,
     'ignoreerrors': False,
     'nocheckcertificate': True,
     'no_color': True,
 }
 
 ffmpeg_options = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin',
-    'options': '-vn -b:a 128k -ar 48000 -ac 2'
+    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -nostdin -user_agent "Mozilla/5.0"',
+    'options': '-vn -b:a 128k -ar 48000 -ac 2 -loglevel quiet'
 }
 
 ytdl = yt_dlp.YoutubeDL(ytdl_format_options)
