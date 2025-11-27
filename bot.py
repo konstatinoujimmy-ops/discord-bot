@@ -2216,39 +2216,65 @@ class RaidView(discord.ui.View):
             result_text += f"💰 {stolen_points} points κλάπηκαν!"
             color = discord.Color.red()
         
-        # Create rich embed with both characters
+        # Create visual battle scene description
+        battle_scene = f"""
+╔════════════════════════════════════════╗
+║        🎌 **EPIC ANIME BATTLE** 🎌      ║
+╚════════════════════════════════════════╝
+
+⚔️ **{interaction.user.name}** ⚔️
+{attacker_char['name']}
+{attacker_char['series']}
+───────────────────────────────
+🆚 VS 🆚
+───────────────────────────────
+🛡️ **{defender_name}** 🛡️
+{defender_char['name']}
+{defender_char['series']}
+
+{result_title}
+"""
+        
+        # Create rich embed with battle scene
         embed = discord.Embed(
-            title="⚔️ Raid Battle Result",
-            description=result_title,
+            title="⚔️⚔️ ANIME RAID BATTLE ⚔️⚔️",
+            description=battle_scene,
             color=color,
             timestamp=datetime.utcnow()
         )
         
-        # Add attacker character info
+        # Add attacker stats
         embed.add_field(
-            name=f"⚔️ Attacker: {interaction.user.name}",
-            value=f"**{attacker_char['name']}** ({attacker_char['series']})\n{attacker_data['points']} ⭐ Points",
+            name=f"⚔️ {interaction.user.name}",
+            value=f"**{attacker_char['name']}**\nSeries: {attacker_char['series']}\n💪 Power: {attacker_power} ⭐\n💰 Final: {attacker_data['points']} ⭐",
             inline=True
         )
         
-        # Add defender character info
+        # Add VS symbol
+        embed.add_field(
+            name="🆚",
+            value=f"```\n  RAID BATTLE\n  {stolen_points} pts\n  TRANSFERRED\n```",
+            inline=True
+        )
+        
+        # Add defender stats
         defender_name = defender_user.name if defender_user else "Unknown"
         embed.add_field(
-            name=f"🛡️ Defender: {defender_name}",
-            value=f"**{defender_char['name']}** ({defender_char['series']})\n{defender_data['points']} ⭐ Points",
+            name=f"🛡️ {defender_name}",
+            value=f"**{defender_char['name']}**\nSeries: {defender_char['series']}\n💪 Power: {defender_power} ⭐\n💰 Final: {defender_data['points']} ⭐",
             inline=True
         )
         
-        # Add battle details
-        embed.add_field(
-            name="⚡ Battle Details",
-            value=result_text,
-            inline=False
-        )
-        
-        # Set images side by side
+        # Set attacker image as main and defender as thumbnail for side-by-side view
         embed.set_image(url=attacker_char['image'])
         embed.set_thumbnail(url=defender_char['image'])
+        
+        # Add footer with battle result
+        if attacker_win:
+            footer_text = f"🎉 {attacker_char['name']} WINS! 🎉"
+        else:
+            footer_text = f"🛡️ {defender_char['name']} WINS! 🛡️"
+        embed.set_footer(text=footer_text)
         
         save_anime_data()  # Save raid results
         await interaction.response.edit_message(embed=embed, view=None)
