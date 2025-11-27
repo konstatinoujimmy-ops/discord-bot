@@ -2166,15 +2166,21 @@ class RaidView(discord.ui.View):
             # Attacker wins 50% of defender's points
             stolen_points = int(defender_power * 0.5)
             attacker_data['points'] += stolen_points
-            defender_data['points'] -= stolen_points
+            defender_data['points'] = max(0, defender_data['points'] - stolen_points)
             
             result_text = f"🎉 **ΝΙΚΗ!** Έκλεψες {stolen_points} points από τον εχθρό!\n"
             result_text += f"**Δικά σου points:** {attacker_data['points']} ⭐\n"
-            result_text += f"**Points εχθρού:** {max(0, defender_data['points'])} ⭐"
+            result_text += f"**Points εχθρού:** {defender_data['points']} ⭐"
             color = discord.Color.green()
         else:
-            result_text = f"❌ **ΗΤΤΑ!** Ο εχθρός ήταν πιο δυνατός!\n"
-            result_text += f"**Δικά σου points:** {attacker_data['points']} ⭐"
+            # Defender wins - steals 50% of attacker's points
+            stolen_points = int(attacker_power * 0.5)
+            defender_data['points'] += stolen_points
+            attacker_data['points'] = max(0, attacker_data['points'] - stolen_points)
+            
+            result_text = f"❌ **ΗΤΤΑ!** Ο εχθρός σε νίκησε και σου έκλεψε {stolen_points} points!\n"
+            result_text += f"**Δικά σου points:** {attacker_data['points']} ⭐\n"
+            result_text += f"**Points εχθρού:** {defender_data['points']} ⭐"
             color = discord.Color.red()
         
         embed = discord.Embed(
