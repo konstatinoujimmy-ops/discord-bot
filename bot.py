@@ -2157,14 +2157,10 @@ async def check_partnerships(interaction: discord.Interaction):
         async for message in partnership_channel.history(limit=300):
             content = message.content
             if 'discord.gg/' in content or 'discord.com/invite/' in content:
-                # Extract invite codes
-                import re
-                invite_codes = re.findall(r'discord\.gg/(\w+)|discord\.com/invite/(\w+)', content)
                 partnerships.append({
                     'author': message.author.name if message.author else 'Unknown',
                     'content': content,
-                    'timestamp': message.created_at,
-                    'invite_codes': [code[0] or code[1] for code in invite_codes]
+                    'timestamp': message.created_at
                 })
         
         if not partnerships:
@@ -2182,26 +2178,23 @@ async def check_partnerships(interaction: discord.Interaction):
         deleted_servers = []
         active_servers = []
         
-        for partnership in partnerships[:20]:
-            # Check if this message is marked as "Ενεργό" (Active) or "ΔΙΑΓΡΑΜΜΕΝΟ" (Deleted)
+        for partnership in partnerships[:30]:
             content_lower = partnership['content'].lower()
             
-            # If message contains one of mitsos's invite codes OR says "Ενεργό", it's active
-            has_mitsos_link = any(mitsos_code.lower() in content_lower for mitsos_code in MITSOS_LINKS)
-            has_active_marker = 'ενεργό' in content_lower or 'active' in content_lower
-            is_deleted_marker = 'διαγραμμένο' in content_lower or 'deleted' in content_lower or '✗' in content_lower or '❌' in content_lower
+            # Έλεγχος: αν υπάρχει ένα από τα 5 links του mitsos = ΕΝΕΡΓΟ
+            has_mitsos_link = any(link.lower() in content_lower for link in MITSOS_LINKS)
             
-            # The logic: if marked as deleted by the partnership system, it's deleted
-            if is_deleted_marker or (not has_mitsos_link and not has_active_marker):
-                deleted_servers.append(partnership)
-                status = "❌"
-            else:
+            if has_mitsos_link:
                 active_servers.append(partnership)
                 status = "✅"
+            else:
+                deleted_servers.append(partnership)
+                status = "❌"
             
-            if len(report_embed.fields) < 10:
+            # Δείχνε τα πρώτα 12
+            if len(report_embed.fields) < 12:
                 report_embed.add_field(
-                    name=f"{status} {partnership['author'][:20]}",
+                    name=f"{status} {partnership['author'][:25]}",
                     value=f"📅 {partnership['timestamp'].strftime('%d/%m/%Y')}",
                     inline=True
                 )
