@@ -1978,32 +1978,28 @@ class RaidView(discord.ui.View):
             result_text += f"💰 {stolen_points} points κλάπηκαν!"
             color = discord.Color.red()
         
-        # Create compact battle result embed
-        battle_title = f"🎉 {attacker_char['name']} WINS! 🎉" if attacker_win else f"🛡️ {defender_char['name']} WINS! 🛡️"
-        
-        result_embed = discord.Embed(
-            title="⚔️ RAID BATTLE ⚔️",
-            description=f"{result_title}\n\n💰 **Points Transferred:** {stolen_points} ⭐",
-            color=color,
-            timestamp=datetime.utcnow()
+        # Create attacker embed with image
+        attacker_embed = discord.Embed(
+            title=f"⚔️ {interaction.user.name}",
+            description=f"**{attacker_char['name']}**\n{attacker_char['series']}\n\n{result_title}\n\n💰 **Points Stolen:** {stolen_points} ⭐",
+            color=discord.Color.blue() if attacker_win else discord.Color.red()
         )
+        attacker_embed.add_field(name="💪 Power", value=f"{attacker_power} ⭐", inline=True)
+        attacker_embed.add_field(name="💰 Now", value=f"{attacker_data['points']} ⭐", inline=True)
+        attacker_embed.set_thumbnail(url=interaction.user.display_avatar.url)
         
-        # Attacker info (inline)
-        result_embed.add_field(
-            name=f"⚔️ {interaction.user.name}",
-            value=f"**{attacker_char['name']}** ({attacker_char['series']})\n💪 {attacker_power} ⭐ → {attacker_data['points']} ⭐",
-            inline=True
+        # Create defender embed with image
+        defender_embed = discord.Embed(
+            title=f"🛡️ {defender_name}",
+            description=f"**{defender_char['name']}**\n{defender_char['series']}",
+            color=discord.Color.red() if attacker_win else discord.Color.blue()
         )
-        
-        # Defender info (inline)
-        result_embed.add_field(
-            name=f"🛡️ {defender_name}",
-            value=f"**{defender_char['name']}** ({defender_char['series']})\n💪 {defender_power} ⭐ → {defender_data['points']} ⭐",
-            inline=True
-        )
+        defender_embed.add_field(name="💪 Power", value=f"{defender_power} ⭐", inline=True)
+        defender_embed.add_field(name="💰 Now", value=f"{defender_data['points']} ⭐", inline=True)
+        defender_embed.set_thumbnail(url=defender_user.display_avatar.url)
         
         save_anime_data()  # Save raid results
-        await interaction.response.edit_message(embeds=[result_embed], view=None)
+        await interaction.response.edit_message(embeds=[attacker_embed, defender_embed], view=None)
 
 @tree.command(name="my_anime_character", description="🎌 Διάλεξε τον anime character σου και γίνε πιο δυνατός!")
 async def my_anime_character(interaction: discord.Interaction):
