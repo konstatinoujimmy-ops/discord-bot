@@ -2168,6 +2168,7 @@ class RaidView(discord.ui.View):
         attacker_char = ANIME_CHARACTERS[attacker_data['char_id']]
         defender_char = ANIME_CHARACTERS[defender_data['char_id']]
         defender_user = guild.get_member(defender_id)
+        defender_name = defender_user.name if defender_user else "Unknown"
         
         # Battle result based on power difference
         # Avoid division by zero
@@ -2258,7 +2259,6 @@ class RaidView(discord.ui.View):
         )
         
         # Add defender stats
-        defender_name = defender_user.name if defender_user else "Unknown"
         embed.add_field(
             name=f"🛡️ {defender_name}",
             value=f"**{defender_char['name']}**\nSeries: {defender_char['series']}\n💪 Power: {defender_power} ⭐\n💰 Final: {defender_data['points']} ⭐",
