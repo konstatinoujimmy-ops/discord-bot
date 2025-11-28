@@ -2416,6 +2416,131 @@ async def recall_stats(interaction: discord.Interaction):
         logger.error(f"Error getting recall stats: {e}")
         await interaction.followup.send(f"❌ Σφάλμα: {str(e)[:100]}", ephemeral=True)
 
+@tree.command(name="recall_left_members", description="📢 Στείλε DM σε members που έφυγαν τις τελευταίες 180 ημέρες")
+@app_commands.check(recall_members_check)
+async def recall_left_members(interaction: discord.Interaction):
+    """Στέλνει DM σε members που έφυγαν τον τελευταίο χρόνο (από audit logs - 180 ημέρες)"""
+    await interaction.response.defer(ephemeral=True)
+    
+    guild = interaction.guild
+    
+    # Check permissions
+    if not guild.me.guild_permissions.view_audit_log:
+        await interaction.followup.send("❌ Ο bot δεν έχει AUDIT_LOG permissions!", ephemeral=True)
+        return
+    
+    try:
+        # Load tracking for left members
+        recall_tracking = load_recall_tracking()
+        if 'recalled_left_members' not in recall_tracking:
+            recall_tracking['recalled_left_members'] = []
+        
+        # Get members who left in the last 180 days from audit logs
+        left_members = {}
+        cutoff_time = datetime.now(timezone.utc) - timedelta(days=180)
+        
+        async for entry in guild.audit_logs(action=discord.AuditLogAction.member_remove, limit=500):
+            if entry.created_at > cutoff_time:
+                if entry.target.id not in left_members:
+                    left_members[entry.target.id] = entry.target
+        
+        if not left_members:
+            await interaction.followup.send("✅ Κανένας δεν έχει φύγει τις τελευταίες 180 ημέρες!", ephemeral=True)
+            return
+        
+        # Send DMs to members NOT already tracked
+        server_link = "https://discord.gg/JtyjMmZ5n"
+        sent_count = 0
+        failed_count = 0
+        already_recalled = 0
+        total_attempts = len(left_members)
+        attempt_count = 0
+        
+        for user_id, member in left_members.items():
+            attempt_count += 1
+            
+            # Check if already recalled
+            if user_id in recall_tracking['recalled_left_members']:
+                already_recalled += 1
+                continue
+            
+            try:
+                dm_embed = discord.Embed(
+                    title="👋 Σας έχουμε ξεχάσει! 🎮",
+                    description=f"Καλησπέρα **{member.name if hasattr(member, 'name') else member}**!\n\nΠαρατήρησαν ότι δεν είστε παραπάνω στον server μας...",
+                    color=discord.Color.blue()
+                )
+                
+                dm_embed.add_field(
+                    name="💙 Θέλουμε να ξανάρθείτε!",
+                    value=f"Αν θέλετε να ξανάμπείτε στη παρέα μας, κάντε κλικ στο link:",
+                    inline=False
+                )
+                
+                dm_embed.add_field(
+                    name="🔗 Server Link",
+                    value=f"[Κάντε κλικ εδώ για να ξανάμπείτε]({server_link})",
+                    inline=False
+                )
+                
+                dm_embed.set_footer(text=f"Server: {guild.name} | Αν έχετε απορίες, DM το owner!")
+                dm_embed.color = discord.Color.from_rgb(0, 150, 255)
+                
+                await member.send(embed=dm_embed)
+                sent_count += 1
+                
+                # Add to tracked
+                recall_tracking['recalled_left_members'].append(user_id)
+                
+                # Rate limit: 18 seconds between DMs to avoid Discord blocks
+                if attempt_count < total_attempts:  # Don't wait after last DM
+                    await asyncio.sleep(18)
+            except:
+                failed_count += 1
+        
+        # Save tracking data
+        save_recall_tracking(recall_tracking)
+        
+        # Summary report
+        report_embed = discord.Embed(
+            title="📢 Recall Left Members Report (180 Ημέρες)",
+            description=f"DM sent σε members που έφυγαν τις τελευταίες 180 ημέρες",
+            color=discord.Color.green()
+        )
+        
+        report_embed.add_field(
+            name="✅ Νέα DMs",
+            value=f"**{sent_count}** απεστάλησαν",
+            inline=True
+        )
+        
+        report_embed.add_field(
+            name="⏭️ Ήδη Recalled",
+            value=f"**{already_recalled}** είχαν λάβει",
+            inline=True
+        )
+        
+        report_embed.add_field(
+            name="❌ Αποτυχία",
+            value=f"**{failed_count}** απέτυχαν",
+            inline=True
+        )
+        
+        report_embed.add_field(
+            name="📊 Σύνολο Targets",
+            value=f"**{len(left_members)}** members που έφυγαν (180 ημέρες)",
+            inline=False
+        )
+        
+        report_embed.set_footer(text=f"Server Link: {server_link} | 18s delay ανάμεσα στα DMs (anti-block) | Δεν θα ξανάστείλει!")
+        
+        await interaction.followup.send(embed=report_embed, ephemeral=True)
+        logger.info(f"Recall left members: Sent {sent_count}, Already {already_recalled}, Failed {failed_count}/{len(left_members)}")
+        
+    except Exception as e:
+        logger.error(f"Error recalling left members: {e}")
+        await interaction.followup.send(f"❌ Σφάλμα: {str(e)[:100]}", ephemeral=True)
+
 @tree.command(name="lock_members_for_recall", description="🔒 Κλείδωσε ΟΛΟΥΣ τους members (online & offline) για recall")
 @app_commands.check(recall_members_check)
 async def lock_members_for_recall(interaction: discord.Interaction):
