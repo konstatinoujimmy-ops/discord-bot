@@ -2319,9 +2319,9 @@ async def recall_members(interaction: discord.Interaction):
                 # Add to tracked
                 recall_tracking['recalled'].append(user_id)
                 
-                # Rate limit: 45 seconds between DMs to avoid Discord blocks (extra safe)
+                # Rate limit: 18 seconds between DMs to avoid Discord blocks
                 if attempt_count < total_attempts:  # Don't wait after last DM
-                    await asyncio.sleep(45)
+                    await asyncio.sleep(18)
             except:
                 failed_count += 1
         
@@ -2365,7 +2365,7 @@ async def recall_members(interaction: discord.Interaction):
             inline=False
         )
         
-        report_embed.set_footer(text=f"Server Link: {server_link} | 45s delay ανάμεσα στα DMs (extra safe) | Δεν θα ξανάστείλει!")
+        report_embed.set_footer(text=f"Server Link: {server_link} | 18s delay ανάμεσα στα DMs (anti-block) | Δεν θα ξανάστείλει!")
         
         await interaction.followup.send(embed=report_embed, ephemeral=True)
         logger.info(f"Recall members: Sent {sent_count}, Already {already_recalled}, Failed {failed_count}/{len(left_members)}")
@@ -2492,9 +2492,9 @@ async def recall_left_members(interaction: discord.Interaction):
                 # Add to tracked
                 recall_tracking['recalled_left_members'].append(user_id)
                 
-                # Rate limit: 45 seconds between DMs to avoid Discord blocks (extra safe)
+                # Rate limit: 18 seconds between DMs to avoid Discord blocks
                 if attempt_count < total_attempts:  # Don't wait after last DM
-                    await asyncio.sleep(45)
+                    await asyncio.sleep(18)
             except:
                 failed_count += 1
         
@@ -2532,7 +2532,7 @@ async def recall_left_members(interaction: discord.Interaction):
             inline=False
         )
         
-        report_embed.set_footer(text=f"Server Link: {server_link} | 45s delay ανάμεσα στα DMs (extra safe) | Δεν θα ξανάστείλει!")
+        report_embed.set_footer(text=f"Server Link: {server_link} | 18s delay ανάμεσα στα DMs (anti-block) | Δεν θα ξανάστείλει!")
         
         await interaction.followup.send(embed=report_embed, ephemeral=True)
         logger.info(f"Recall left members: Sent {sent_count}, Already {already_recalled}, Failed {failed_count}/{len(left_members)}")
