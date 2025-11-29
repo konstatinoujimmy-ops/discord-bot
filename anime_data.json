@@ -11,8 +11,8 @@
     },
     "839148474314129419": {
       "char_id": 11,
-      "points": 1,
-      "message_count": 1,
+      "points": 28,
+      "message_count": 28,
       "last_raid_time": 1764271338.669759,
       "raid_cooldowns": {
         "392366212602003456": 1764405183.685493,
@@ -39,9 +39,16 @@
     },
     "996417044302008491": {
       "char_id": 4,
-      "points": 7,
+      "points": 3,
       "message_count": 3,
       "last_raid_time": 0
+    },
+    "997217018380034099": {
+      "char_id": 78,
+      "points": 0,
+      "message_count": 0,
+      "last_raid_time": 0,
+      "raid_cooldowns": {}
     }
   }
 }
