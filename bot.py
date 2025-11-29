@@ -85,6 +85,7 @@ def add_contacted_member(user_id):
 
 active_mutes = {}
 dm2_sent_count = 0
+recall_left_members_sent_count = 0
 
 security_tracker = {
     'channel_creations': defaultdict(list),
@@ -876,6 +877,20 @@ async def dm2_status(interaction: discord.Interaction):
         await interaction.response.send_message("❌ Δεν έχεις δικαιώματα.", ephemeral=True)
         return
     await interaction.response.send_message(f"✉️ Έχουν σταλεί μηνύματα σε {dm2_sent_count} μέλη μέχρι τώρα.", ephemeral=True)
+
+@tree.command(name="recall_left_members_status", description="📊 LIVE πόσα DMs στέλνονται με το /recall_left_members (Zeno only)")
+async def recall_left_members_status(interaction: discord.Interaction):
+    """Δείχνει LIVE πόσα DMs έχουν σταλεί με το /recall_left_members σε members που έφυγαν"""
+    # Permission check: Zeno role or Owner
+    ZENO_ROLE_ID = 1162022515846172723
+    is_owner = interaction.user.id == OWNER_ID
+    has_zeno_role = any(role.id == ZENO_ROLE_ID for role in interaction.user.roles) if hasattr(interaction.user, 'roles') else False
+    
+    if not (is_owner or has_zeno_role):
+        await interaction.response.send_message("❌ Μόνο ο owner ή Zeno role μπορούν να χρησιμοποιήσουν αυτό το command!", ephemeral=True)
+        return
+    
+    await interaction.response.send_message(f"📢 Έχουν σταλεί DMs σε **{recall_left_members_sent_count}** μέλη που έφυγαν τις τελευταίες 180 ημέρες μέχρι τώρα.", ephemeral=True)
 
 @tree.command(name="mute", description="Mute έναν χρήστη (για admins).")
 @app_commands.describe(user="User to mute", duration="Duration σε λεπτά (προαιρετικό)")
@@ -2420,6 +2435,9 @@ async def recall_stats(interaction: discord.Interaction):
 @app_commands.check(recall_members_check)
 async def recall_left_members(interaction: discord.Interaction):
     """Στέλνει DM σε members που έφυγαν τον τελευταίο χρόνο (από audit logs - 180 ημέρες)"""
+    global recall_left_members_sent_count
+    recall_left_members_sent_count = 0
+    
     await interaction.response.defer(ephemeral=True)
     
     guild = interaction.guild
@@ -2488,6 +2506,7 @@ async def recall_left_members(interaction: discord.Interaction):
                 
                 await member.send(embed=dm_embed)
                 sent_count += 1
+                recall_left_members_sent_count += 1
                 
                 # Add to tracked
                 recall_tracking['recalled_left_members'].append(user_id)
