@@ -15,7 +15,7 @@ class AutoPing:
     def __init__(self):
         self.running = False
         self.thread = None
-        self.ping_interval = 120  # 2 λεπτά σε δευτερόλεπτα για maximum uptime
+        self.ping_interval = 20  # 20 δευτερόλεπτα για maximum uptime
         
     def get_ping_url(self):
         """Παίρνει το σωστό URL για ping"""
