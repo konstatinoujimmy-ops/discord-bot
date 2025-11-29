@@ -13,7 +13,10 @@
       "char_id": 11,
       "points": 1,
       "message_count": 1,
-      "last_raid_time": 1764271338.669759
+      "last_raid_time": 1764271338.669759,
+      "raid_cooldowns": {
+        "392366212602003456": 1764405183.685493
+      }
     },
     "975077862002552915": {
       "char_id": 25,
@@ -29,8 +32,8 @@
     },
     "1269342746204835900": {
       "char_id": 18,
-      "points": 1,
-      "message_count": 1,
+      "points": 2,
+      "message_count": 2,
       "last_raid_time": 0
     }
   }
