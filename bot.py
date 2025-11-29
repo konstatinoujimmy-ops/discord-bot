@@ -1851,18 +1851,20 @@ class AnimeCharacterView(discord.ui.View):
             if guild.id not in anime_characters:
                 anime_characters[guild.id] = {}
             
-            # Χρησιμοποίησε τα μηνύματα που ήδη έχουν μετρηθεί από το on_message
-            message_count = 0
-            if guild.id in user_message_counts and user.id in user_message_counts[guild.id]:
-                message_count = user_message_counts[guild.id][user.id]
-            
+            # Ξεκίνα με 0 points - μόνο τα νέα μηνύματα από εδώ και πέρα μετράνε!
             anime_characters[guild.id][user.id] = {
                 'char_id': char_id,
-                'points': message_count,
-                'message_count': message_count,
+                'points': 0,
+                'message_count': 0,
                 'last_raid_time': 0,
                 'raid_cooldowns': {}
             }
+            
+            # Ξέχνα τα παλιά μηνύματα - reset στο 0 για αυτόν τον user
+            if guild.id in user_message_counts:
+                user_message_counts[guild.id][user.id] = 0
+            else:
+                user_message_counts[guild.id] = {user.id: 0}
             
             save_anime_data()
             
