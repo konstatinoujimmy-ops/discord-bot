@@ -2469,6 +2469,21 @@ async def recall_left_members(interaction: discord.Interaction):
                 if entry.target.id not in left_members:
                     left_members[entry.target.id] = entry.target
         
+        # Also get voluntary departures: members we had contact with but are no longer in guild
+        contacted_members = load_contacted_members()
+        current_member_ids = set()
+        async for member in guild.fetch_members(limit=None):
+            current_member_ids.add(member.id)
+        
+        # Find members who are no longer in guild (voluntary leave)
+        for user_id in contacted_members:
+            if user_id not in current_member_ids and user_id not in left_members:
+                try:
+                    user = await bot.fetch_user(user_id)
+                    left_members[user_id] = user
+                except:
+                    pass  # User might have been deleted or blocked
+        
         if not left_members:
             await interaction.followup.send("✅ Κανένας δεν έχει φύγει τις τελευταίες 180 ημέρες!", ephemeral=True)
             return
