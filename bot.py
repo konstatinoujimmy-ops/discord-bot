@@ -2193,17 +2193,68 @@ async def raid(interaction: discord.Interaction):
     load_anime_data()
     
     guild = interaction.guild
+    await interaction.response.defer(ephemeral=True)
     
     # Check if user has character
     if guild.id not in anime_characters or interaction.user.id not in anime_characters[guild.id]:
-        await interaction.response.send_message("❌ Πρώτα πρέπει να διαλέξεις έναν anime character με `/my_anime_character`!", ephemeral=True)
+        await interaction.followup.send("❌ Πρώτα πρέπει να διαλέξεις έναν anime character με `/my_anime_character`!", ephemeral=True)
         return
     
-    # Get all users with characters
+    # Initialize guild data if needed
+    if guild.id not in anime_characters:
+        anime_characters[guild.id] = {}
+    
+    # Count messages for ALL users who have messages (even without character)
+    logger.info("🔄 Counting messages for all users...")
+    all_message_counts = {}
+    
+    try:
+        for channel in guild.text_channels:
+            try:
+                if not channel.permissions_for(guild.me).read_message_history:
+                    continue
+                
+                async for message in channel.history(limit=5000):
+                    if message.author.bot:
+                        continue
+                    
+                    if message.author.id not in all_message_counts:
+                        all_message_counts[message.author.id] = 0
+                    all_message_counts[message.author.id] += 1
+                    
+            except:
+                continue
+    except Exception as e:
+        logger.warning(f"Error counting messages: {e}")
+    
+    # Create temporary characters for users with messages but no character
+    for user_id, msg_count in all_message_counts.items():
+        if user_id == interaction.user.id:
+            continue
+        
+        # Update or create character entry
+        if user_id not in anime_characters[guild.id]:
+            # Assign random character
+            random_char_id = random.choice(list(ANIME_CHARACTERS.keys()))
+            anime_characters[guild.id][user_id] = {
+                'char_id': random_char_id,
+                'points': msg_count,
+                'message_count': msg_count,
+                'last_raid_time': 0,
+                'raid_cooldowns': {}
+            }
+        else:
+            # Update points based on message count
+            anime_characters[guild.id][user_id]['points'] = max(anime_characters[guild.id][user_id]['points'], msg_count)
+            anime_characters[guild.id][user_id]['message_count'] = msg_count
+    
+    save_anime_data()
+    
+    # Get all users with characters (now including those just created)
     defenders = [uid for uid in anime_characters[guild.id].keys() if uid != interaction.user.id]
     
     if not defenders:
-        await interaction.response.send_message("❌ Κανένας άλλος δεν έχει διαλέξει character ακόμα!", ephemeral=True)
+        await interaction.followup.send("❌ Κανένας άλλος δεν έχει διαλέξει character ακόμα!", ephemeral=True)
         return
     
     # Show raid options with beautiful UI
