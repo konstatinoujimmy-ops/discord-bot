@@ -2475,44 +2475,40 @@ async def recall_left_members(interaction: discord.Interaction):
         if 'recalled_left_members' not in recall_tracking:
             recall_tracking['recalled_left_members'] = []
         
-        # Get ALL members who have ever interacted with guild (from audit logs + current)
+        # Read from #invites channel to get all members that ever joined
+        invites_channel_id = 1275754963519410207
         left_members = {}
-        cutoff_time = datetime.now(timezone.utc) - timedelta(days=180)
-        all_ever_members = set()  # ALL members that ever appeared in guild
-        kicked_or_banned = set()  # Members who got kicked/banned (EXCLUDE THESE)
+        all_entries_members = set()
         
         # Get current guild members
         current_member_ids = set()
         async for member in guild.fetch_members(limit=None):
             current_member_ids.add(member.id)
-            all_ever_members.add(member.id)
         
         logger.info(f"📊 DEBUG: current_members={len(current_member_ids)}")
         
-        # Scan ALL audit logs for kicked members - ADD TO EXCLUSION LIST
-        kick_count = 0
-        async for entry in guild.audit_logs(action=discord.AuditLogAction.kick, limit=None):
-            if entry.created_at > cutoff_time:
-                all_ever_members.add(entry.target.id)
-                kicked_or_banned.add(entry.target.id)  # EXCLUDE THESE!
-                kick_count += 1
+        # Read invites channel for all members that joined
+        try:
+            invites_channel = guild.get_channel(invites_channel_id)
+            if invites_channel:
+                message_count = 0
+                async for message in invites_channel.history(limit=None):
+                    message_count += 1
+                    # Extract mentioned users from the message
+                    if message.mentions:
+                        for mentioned_user in message.mentions:
+                            all_entries_members.add(mentioned_user.id)
+                
+                logger.info(f"📊 DEBUG: invites_channel_messages={message_count}, members_from_channel={len(all_entries_members)}")
+            else:
+                logger.error(f"❌ Invites channel {invites_channel_id} not found!")
+        except Exception as e:
+            logger.error(f"❌ Error reading invites channel: {e}")
         
-        logger.info(f"📊 DEBUG: kicks_found={kick_count}")
-        
-        # Scan ALL audit logs for banned members - ADD TO EXCLUSION LIST
-        ban_count = 0
-        async for entry in guild.audit_logs(action=discord.AuditLogAction.ban, limit=None):
-            if entry.created_at > cutoff_time:
-                all_ever_members.add(entry.target.id)
-                kicked_or_banned.add(entry.target.id)  # EXCLUDE THESE!
-                ban_count += 1
-        
-        logger.info(f"📊 DEBUG: bans_found={ban_count}")
-        
-        # Find ONLY voluntary departures (NOT kicked/banned)
+        # Find members who are in the entries but NOT currently in guild
         voluntary_departures = 0
-        for user_id in all_ever_members:
-            if user_id not in current_member_ids and user_id not in kicked_or_banned:
+        for user_id in all_entries_members:
+            if user_id not in current_member_ids:
                 voluntary_departures += 1
                 try:
                     user = await bot.fetch_user(user_id)
@@ -2520,7 +2516,7 @@ async def recall_left_members(interaction: discord.Interaction):
                 except:
                     pass  # User might have been deleted or blocked
         
-        logger.info(f"📊 DEBUG: all_ever_members={len(all_ever_members)}, kicked_or_banned={len(kicked_or_banned)}, voluntary_departures={voluntary_departures}, total_left_members={len(left_members)}")
+        logger.info(f"📊 DEBUG: all_entries_members={len(all_entries_members)}, voluntary_departures={voluntary_departures}, total_left_members={len(left_members)}")
         
         if not left_members:
             await interaction.followup.send("✅ Κανένας δεν έχει φύγει τις τελευταίες 180 ημέρες!", ephemeral=True)
