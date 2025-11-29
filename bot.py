@@ -2583,9 +2583,9 @@ async def recall_left_members(interaction: discord.Interaction):
                 if attempt_count % 50 == 0:
                     logger.info(f"⏸️  PROGRESS: {attempt_count}/{total_attempts} - Sent: {sent_count}, Failed: {failed_count}")
                 
-                # Rate limit: 9 seconds between DMs to avoid Discord blocks
+                # Rate limit: 1.5 seconds between DMs to avoid Discord blocks (fast but safe)
                 if attempt_count < total_attempts:
-                    await asyncio.sleep(9)
+                    await asyncio.sleep(1.5)
             except Exception as e:
                 failed_count += 1
                 if attempt_count % 50 == 0:
