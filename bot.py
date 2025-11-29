@@ -2265,7 +2265,7 @@ async def recall_members(interaction: discord.Interaction):
         left_members = []
         cutoff_time = datetime.now(timezone.utc) - timedelta(days=365)
         
-        async for entry in guild.audit_logs(action=discord.AuditLogAction.member_remove, limit=500):
+        async for entry in guild.audit_logs(action=discord.AuditLogAction.kick, limit=500):
             if entry.created_at > cutoff_time:
                 left_members.append(entry.target)
         
@@ -2457,7 +2457,7 @@ async def recall_left_members(interaction: discord.Interaction):
         left_members = {}
         cutoff_time = datetime.now(timezone.utc) - timedelta(days=180)
         
-        async for entry in guild.audit_logs(action=discord.AuditLogAction.member_remove, limit=500):
+        async for entry in guild.audit_logs(action=discord.AuditLogAction.kick, limit=500):
             if entry.created_at > cutoff_time:
                 if entry.target.id not in left_members:
                     left_members[entry.target.id] = entry.target
