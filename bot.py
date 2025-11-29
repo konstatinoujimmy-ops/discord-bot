@@ -2475,33 +2475,44 @@ async def recall_left_members(interaction: discord.Interaction):
         if 'recalled_left_members' not in recall_tracking:
             recall_tracking['recalled_left_members'] = []
         
-        # Get members who left in the last 180 days from audit logs (kick + ban)
+        # Get ALL members who have ever interacted with guild (from audit logs + current)
         left_members = {}
         cutoff_time = datetime.now(timezone.utc) - timedelta(days=180)
+        all_ever_members = set()  # ALL members that ever appeared in guild
         
-        # Get kicked members
-        async for entry in guild.audit_logs(action=discord.AuditLogAction.kick, limit=1000):
-            if entry.created_at > cutoff_time:
-                if entry.target.id not in left_members:
-                    left_members[entry.target.id] = entry.target
-        
-        # Also get banned members
-        async for entry in guild.audit_logs(action=discord.AuditLogAction.ban, limit=1000):
-            if entry.created_at > cutoff_time:
-                if entry.target.id not in left_members:
-                    left_members[entry.target.id] = entry.target
-        
-        # Also get voluntary departures: members from all_members_ever not in guild + not in audit logs
-        all_members_ever = set(recall_tracking.get('all_members_ever', []))
+        # Get current guild members
         current_member_ids = set()
         async for member in guild.fetch_members(limit=None):
             current_member_ids.add(member.id)
+            all_ever_members.add(member.id)
         
-        logger.info(f"📊 DEBUG: all_members_ever={len(all_members_ever)}, current={len(current_member_ids)}, audit_logs={len(left_members)}")
+        logger.info(f"📊 DEBUG: current_members={len(current_member_ids)}")
         
-        # Find members who ever joined but are no longer in guild (voluntary leave or not yet captured in audit logs)
+        # Scan ALL audit logs for kicked members (no time limit first to see all)
+        kick_count = 0
+        async for entry in guild.audit_logs(action=discord.AuditLogAction.kick, limit=None):
+            if entry.created_at > cutoff_time:
+                all_ever_members.add(entry.target.id)
+                if entry.target.id not in left_members:
+                    left_members[entry.target.id] = entry.target
+                kick_count += 1
+        
+        logger.info(f"📊 DEBUG: kicks_found={kick_count}")
+        
+        # Scan ALL audit logs for banned members
+        ban_count = 0
+        async for entry in guild.audit_logs(action=discord.AuditLogAction.ban, limit=None):
+            if entry.created_at > cutoff_time:
+                all_ever_members.add(entry.target.id)
+                if entry.target.id not in left_members:
+                    left_members[entry.target.id] = entry.target
+                ban_count += 1
+        
+        logger.info(f"📊 DEBUG: bans_found={ban_count}")
+        
+        # Find members who left (ever appeared but not in guild now)
         voluntary_departures = 0
-        for user_id in all_members_ever:
+        for user_id in all_ever_members:
             if user_id not in current_member_ids and user_id not in left_members:
                 voluntary_departures += 1
                 try:
@@ -2510,7 +2521,7 @@ async def recall_left_members(interaction: discord.Interaction):
                 except:
                     pass  # User might have been deleted or blocked
         
-        logger.info(f"📊 DEBUG: voluntary_departures={voluntary_departures}, total_left_members={len(left_members)}")
+        logger.info(f"📊 DEBUG: all_ever_members={len(all_ever_members)}, voluntary_departures={voluntary_departures}, total_left_members={len(left_members)}")
         
         if not left_members:
             await interaction.followup.send("✅ Κανένας δεν έχει φύγει τις τελευταίες 180 ημέρες!", ephemeral=True)
