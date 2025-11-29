@@ -2134,37 +2134,12 @@ async def raid(interaction: discord.Interaction):
     if guild.id not in anime_characters:
         anime_characters[guild.id] = {}
     
-    # Count messages from ALL channels for users with characters
-    logger.info("🔄 Ενημέρωση points από ΟΛΑ τα channels...")
-    all_messages_count = {}
-    
-    try:
-        for channel in guild.text_channels:
-            try:
-                if not channel.permissions_for(guild.me).read_message_history:
-                    continue
-                
-                # Read all messages from each channel
-                async for message in channel.history(limit=10000):
-                    if message.author.bot:
-                        continue
-                    
-                    if message.author.id not in all_messages_count:
-                        all_messages_count[message.author.id] = 0
-                    all_messages_count[message.author.id] += 1
-                    
-            except asyncio.TimeoutError:
-                logger.warning(f"Timeout reading {channel.name}")
-                continue
-            except Exception as e:
-                logger.warning(f"Error in {channel.name}: {e}")
-                continue
-    except Exception as e:
-        logger.warning(f"Error counting all messages: {e}")
-    
     # Update points ONLY for users who ALREADY have characters
-    if all_messages_count:
-        for user_id, msg_count in all_messages_count.items():
+    # Χρησιμοποίησε τα μηνύματα που ήδη έχουν μετρηθεί από το on_message - ΑΜΕΣΟ!
+    logger.info("🔄 Ενημέρωση points (FAST MODE)...")
+    
+    if guild.id in user_message_counts:
+        for user_id, msg_count in user_message_counts[guild.id].items():
             if user_id == interaction.user.id:
                 continue
             
