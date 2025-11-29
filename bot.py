@@ -2115,7 +2115,7 @@ async def my_anime_character(interaction: discord.Interaction):
         embed.add_field(name="📝 Messages", value=f"{msg_count:,}", inline=True)
         embed.add_field(name="💪 Power Level", value=f"{power_level}%", inline=True)
         embed.set_image(url=char['image'])
-        embed.set_footer(text="Κάθε μήνυμα = +1 Power | /raid για μάχη!")
+        embed.set_footer(text="💡 Όσο περισσότερα μηνύματα, τόσα περισσότερα points παίρνεις! Μετά μπορείς να κάνεις /raid για να κάνεις μάχες!")
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
         return
@@ -2138,6 +2138,7 @@ async def my_anime_character(interaction: discord.Interaction):
             inline=False
         )
     
+    embed.set_footer(text="💡 Όσο περισσότερα μηνύματα, τόσα περισσότερα points παίρνεις! Μετά μπορείς να κάνεις /raid για να κάνεις μάχες!")
     await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 @tree.command(name="admin_power", description="🔧 [OWNER] Προσθέσε ή αφαίρεσε power level από κάποιον")
