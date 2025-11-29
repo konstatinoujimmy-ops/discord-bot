@@ -2492,12 +2492,25 @@ async def recall_left_members(interaction: discord.Interaction):
             invites_channel = guild.get_channel(invites_channel_id)
             if invites_channel:
                 message_count = 0
-                async for message in invites_channel.history(limit=None):
-                    message_count += 1
-                    # Extract mentioned users from the message
-                    if message.mentions:
-                        for mentioned_user in message.mentions:
-                            all_entries_members.add(mentioned_user.id)
+                logger.info(f"📢 Ξεκίνημα διάβασμα {invites_channel.name}...")
+                try:
+                    async for message in asyncio.timeout(300):  # 5 min timeout for entire history
+                        try:
+                            async for msg_chunk in invites_channel.history(limit=None):
+                                message_count += 1
+                                # Extract mentioned users from the message
+                                if msg_chunk.mentions:
+                                    for mentioned_user in msg_chunk.mentions:
+                                        all_entries_members.add(mentioned_user.id)
+                                
+                                # Log every 200 messages
+                                if message_count % 200 == 0:
+                                    logger.info(f"⏳ Διάβασα {message_count} messages, found {len(all_entries_members)} members...")
+                        except Exception as msg_error:
+                            logger.warning(f"⚠️ Error σε message: {str(msg_error)[:50]}")
+                            continue
+                except asyncio.TimeoutError:
+                    logger.warning(f"⏱️ Timeout διάβασμα channel - read {message_count} messages with {len(all_entries_members)} members")
                 
                 logger.info(f"📊 DEBUG: invites_channel_messages={message_count}, members_from_channel={len(all_entries_members)}")
             else:
