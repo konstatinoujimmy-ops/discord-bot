@@ -2015,33 +2015,8 @@ class RaidView(discord.ui.View):
         defender_user = guild.get_member(defender_id)
         defender_name = defender_user.name if defender_user else "Unknown"
         
-        # Battle result based on power difference
-        # Avoid division by zero
-        power_ratio = attacker_power / max(1, defender_power)
-        
-        # Calculate win probability based on power ratio - IMPROVED
-        if power_ratio >= 100:  # 100x more powerful
-            win_probability = 0.99
-        elif power_ratio >= 50:  # 50x more powerful
-            win_probability = 0.97
-        elif power_ratio >= 20:  # 20x more powerful
-            win_probability = 0.95
-        elif power_ratio >= 10:  # 10x more powerful
-            win_probability = 0.90
-        elif power_ratio >= 5:  # 5x more powerful
-            win_probability = 0.85
-        elif power_ratio >= 3:  # 3x more powerful
-            win_probability = 0.80
-        elif power_ratio >= 2:  # 2x more powerful
-            win_probability = 0.80
-        elif power_ratio >= 1.5:  # 1.5x more powerful
-            win_probability = 0.70
-        elif power_ratio >= 1:  # More powerful or equal
-            win_probability = 0.60
-        else:  # Defender is more powerful
-            win_probability = 0.35
-        
-        attacker_win = random.random() < win_probability
+        # Battle result: Όποιος έχει πιο πολλά points νικάει 100%!
+        attacker_win = attacker_power > defender_power
         
         if attacker_win:
             # Attacker wins 50% of defender's points
@@ -2205,12 +2180,37 @@ async def raid(interaction: discord.Interaction):
     if guild.id not in anime_characters:
         anime_characters[guild.id] = {}
     
-    # Update points ONLY for users who ALREADY have characters
-    # Use the existing user_message_counts (που ήδη μετρά όλα τα μηνύματα στο on_message)
-    logger.info("🔄 Ενημέρωση points για όσους έχουν character...")
+    # Count messages from ALL channels for users with characters
+    logger.info("🔄 Ενημέρωση points από ΟΛΑ τα channels...")
+    all_messages_count = {}
     
-    if guild.id in user_message_counts:
-        for user_id, msg_count in user_message_counts[guild.id].items():
+    try:
+        for channel in guild.text_channels:
+            try:
+                if not channel.permissions_for(guild.me).read_message_history:
+                    continue
+                
+                # Read all messages from each channel
+                async for message in channel.history(limit=10000):
+                    if message.author.bot:
+                        continue
+                    
+                    if message.author.id not in all_messages_count:
+                        all_messages_count[message.author.id] = 0
+                    all_messages_count[message.author.id] += 1
+                    
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout reading {channel.name}")
+                continue
+            except Exception as e:
+                logger.warning(f"Error in {channel.name}: {e}")
+                continue
+    except Exception as e:
+        logger.warning(f"Error counting all messages: {e}")
+    
+    # Update points ONLY for users who ALREADY have characters
+    if all_messages_count:
+        for user_id, msg_count in all_messages_count.items():
             if user_id == interaction.user.id:
                 continue
             
