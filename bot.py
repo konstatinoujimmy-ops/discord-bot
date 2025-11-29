@@ -1826,12 +1826,15 @@ class AnimeCharacterView(discord.ui.View):
         self.user_id = user_id
         self.char_options = char_options
         
+        # Χρώματα για κάθε επιλογή
+        colors = [discord.ButtonStyle.success, discord.ButtonStyle.primary, discord.ButtonStyle.secondary]
+        
         for i, char_id in enumerate(char_options, 1):
             char = ANIME_CHARACTERS[char_id]
             button = discord.ui.Button(
                 label=f"{i}. {char['name']}",
                 custom_id=f"anime_select_{char_id}",
-                style=discord.ButtonStyle.primary
+                style=colors[i-1] if i <= len(colors) else discord.ButtonStyle.primary
             )
             button.callback = self.select_character
             self.add_item(button)
