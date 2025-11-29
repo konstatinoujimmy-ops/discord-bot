@@ -2453,11 +2453,18 @@ async def recall_left_members(interaction: discord.Interaction):
         if 'recalled_left_members' not in recall_tracking:
             recall_tracking['recalled_left_members'] = []
         
-        # Get members who left in the last 180 days from audit logs
+        # Get members who left in the last 180 days from audit logs (kick + ban)
         left_members = {}
         cutoff_time = datetime.now(timezone.utc) - timedelta(days=180)
         
-        async for entry in guild.audit_logs(action=discord.AuditLogAction.kick, limit=500):
+        # Get kicked members
+        async for entry in guild.audit_logs(action=discord.AuditLogAction.kick, limit=1000):
+            if entry.created_at > cutoff_time:
+                if entry.target.id not in left_members:
+                    left_members[entry.target.id] = entry.target
+        
+        # Also get banned members
+        async for entry in guild.audit_logs(action=discord.AuditLogAction.ban, limit=1000):
             if entry.created_at > cutoff_time:
                 if entry.target.id not in left_members:
                     left_members[entry.target.id] = entry.target
