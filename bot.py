@@ -2722,11 +2722,11 @@ async def check_partnerships(interaction: discord.Interaction):
         await interaction.followup.send(f"❌ Σφάλμα: {str(e)[:100]}", ephemeral=True)
 
 def run_bot():
-    # Use old token (original bot)
-    token = os.getenv('DISCORD_TOKEN')
+    # Use new token (third bot - DISCORD_TOKEN_2)
+    token = os.getenv('DISCORD_TOKEN_2')
     
     if not token:
-        logger.error("❌ DISCORD_TOKEN not found in environment variables!")
+        logger.error("❌ DISCORD_TOKEN_2 not found in environment variables!")
         return
     
     try:
