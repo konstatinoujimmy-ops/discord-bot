@@ -2492,9 +2492,9 @@ async def recall_left_members(interaction: discord.Interaction):
                 # Add to tracked
                 recall_tracking['recalled_left_members'].append(user_id)
                 
-                # Rate limit: 18 seconds between DMs to avoid Discord blocks
+                # Rate limit: 9 seconds between DMs (same as /dm2) to avoid Discord blocks
                 if attempt_count < total_attempts:  # Don't wait after last DM
-                    await asyncio.sleep(18)
+                    await asyncio.sleep(9)
             except:
                 failed_count += 1
         
