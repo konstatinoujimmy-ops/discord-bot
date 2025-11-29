@@ -2547,8 +2547,12 @@ async def recall_left_members(interaction: discord.Interaction):
                     user = await asyncio.wait_for(bot.fetch_user(user_id), timeout=2.0)
                 except asyncio.TimeoutError:
                     failed_count += 1
-                    if attempt_count % 50 == 0:
+                    if attempt_count % 10 == 0:  # More frequent logs now
                         logger.info(f"⏸️  PROGRESS: {attempt_count}/{total_attempts} - Sent: {sent_count}, Failed: {failed_count}")
+                        # Write to tracking file
+                        with open('recall_progress.json', 'w') as f:
+                            import json
+                            json.dump({'sent': sent_count, 'failed': failed_count, 'total': total_attempts, 'attempt': attempt_count}, f)
                     continue
                 
                 dm_embed = discord.Embed(
@@ -2579,17 +2583,24 @@ async def recall_left_members(interaction: discord.Interaction):
                 # Add to tracked
                 recall_tracking['recalled_left_members'].append(user_id)
                 
-                # Log progress every 50
-                if attempt_count % 50 == 0:
+                # Log progress every 10 members (more frequent)
+                if attempt_count % 10 == 0:
                     logger.info(f"⏸️  PROGRESS: {attempt_count}/{total_attempts} - Sent: {sent_count}, Failed: {failed_count}")
+                    # Write to tracking file for real-time monitoring
+                    with open('recall_progress.json', 'w') as f:
+                        import json
+                        json.dump({'sent': sent_count, 'failed': failed_count, 'total': total_attempts, 'attempt': attempt_count}, f)
                 
                 # Rate limit: 1.5 seconds between DMs to avoid Discord blocks (fast but safe)
                 if attempt_count < total_attempts:
                     await asyncio.sleep(1.5)
             except Exception as e:
                 failed_count += 1
-                if attempt_count % 50 == 0:
+                if attempt_count % 10 == 0:
                     logger.info(f"⏸️  PROGRESS: {attempt_count}/{total_attempts} - Sent: {sent_count}, Failed: {failed_count} - Error: {str(e)[:50]}")
+                    with open('recall_progress.json', 'w') as f:
+                        import json
+                        json.dump({'sent': sent_count, 'failed': failed_count, 'total': total_attempts, 'attempt': attempt_count}, f)
         
         # Save tracking data
         save_recall_tracking(recall_tracking)
