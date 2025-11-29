@@ -1847,83 +1847,35 @@ class AnimeCharacterView(discord.ui.View):
             guild = interaction.guild
             user = interaction.user
             
-            # Αποθήκευση character με temporary 0 points
+            # Αποθήκευση character - ΓΡΗΓΟΡΟ, χωρίς διάβασμα μηνυμάτων!
             if guild.id not in anime_characters:
                 anime_characters[guild.id] = {}
             
+            # Χρησιμοποίησε τα μηνύματα που ήδη έχουν μετρηθεί από το on_message
+            message_count = 0
+            if guild.id in user_message_counts and user.id in user_message_counts[guild.id]:
+                message_count = user_message_counts[guild.id][user.id]
+            
             anime_characters[guild.id][user.id] = {
                 'char_id': char_id,
-                'points': 0,
-                'message_count': 0,
-                'last_raid_time': 0
+                'points': message_count,
+                'message_count': message_count,
+                'last_raid_time': 0,
+                'raid_cooldowns': {}
             }
             
-            # Send immediate response with loading state
+            save_anime_data()
+            
+            # Αμέσως απάντηση - ΧΩΡΙΣ ΑΡΓΟ!
             embed = discord.Embed(
                 title=f"🎌 Επέλεξες: {char['name']}!",
-                description=f"**Series:** {char['series']}\n**Points:** 🔄 Υπολογίζω...",
-                color=discord.Color.blue()
-            )
-            embed.set_image(url=char['image'])
-            embed.set_footer(text="Μετράω τα παλιά μηνύματα...")
-            
-            await interaction.response.edit_message(embed=embed, view=None)
-            
-            # Count messages in background - SIMPLE & FAST
-            message_count = 0
-            channels_checked = 0
-            channels_failed = 0
-            
-            for channel in guild.text_channels:
-                if channels_checked >= 10:  # Limit to 10 channels max
-                    break
-                if not isinstance(channel, discord.TextChannel):
-                    continue
-                
-                try:
-                    perms = channel.permissions_for(guild.me)
-                    if not perms.read_messages or not perms.read_message_history:
-                        continue
-                    
-                    channels_checked += 1
-                    logger.info(f"Counting messages for {user.name} in {channel.name}")
-                    
-                    # Count last 10k messages in each channel
-                    async for message in channel.history(limit=10000):
-                        if message.author.id == user.id:
-                            message_count += 1
-                except asyncio.TimeoutError:
-                    channels_failed += 1
-                    logger.warning(f"Timeout reading history in {channel.name}")
-                    continue
-                except discord.Forbidden:
-                    channels_failed += 1
-                    logger.warning(f"Permission denied in {channel.name}")
-                    continue
-                except Exception as e:
-                    channels_failed += 1
-                    logger.warning(f"Error in channel {channel.name}: {e}")
-                    continue
-            
-            logger.info(f"✅ Found {message_count} messages for {user.name} in {channels_checked} channels")
-            
-            # Update with actual count
-            anime_characters[guild.id][user.id]['points'] = message_count
-            anime_characters[guild.id][user.id]['message_count'] = message_count
-            save_anime_data()  # Save to file
-            
-            embed = discord.Embed(
-                title=f"🎌 Επέλεξες: {char['name']}!",
-                description=f"**Series:** {char['series']}\n**Points:** {message_count} ⭐\n**Power Level:** {int(message_count * 0.1)}%",
+                description=f"**Series:** {char['series']}\n**Points:** {message_count} ⭐",
                 color=discord.Color.purple()
             )
             embed.set_image(url=char['image'])
             embed.set_footer(text=f"Ξεκίνησες με {message_count} points! Νέα = +1 Power")
             
-            try:
-                await interaction.edit_original_response(embed=embed)
-            except:
-                pass
+            await interaction.response.edit_message(embed=embed, view=None)
         
         except Exception as e:
             logger.error(f"Error selecting anime character: {e}")
