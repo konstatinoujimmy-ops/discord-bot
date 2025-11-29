@@ -2206,7 +2206,7 @@ async def raid(interaction: discord.Interaction):
     embed.color = discord.Color.from_rgb(180, 0, 0)
     
     view = RaidView(interaction.user.id, defenders)
-    await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 @tree.command(name="check_partnerships", description="📊 Μέτρησε πόσα server links υπάρχουν στο partnership channel")
 async def check_partnerships(interaction: discord.Interaction):
