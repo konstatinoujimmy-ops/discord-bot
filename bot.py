@@ -2206,7 +2206,7 @@ async def raid(interaction: discord.Interaction):
         anime_characters[guild.id] = {}
     
     # Count messages for ALL users who have messages (even without character)
-    logger.info("🔄 Counting messages for all users...")
+    logger.info("🔄 Counting messages for all users (FAST MODE)...")
     all_message_counts = {}
     
     try:
@@ -2215,7 +2215,8 @@ async def raid(interaction: discord.Interaction):
                 if not channel.permissions_for(guild.me).read_message_history:
                     continue
                 
-                async for message in channel.history(limit=5000):
+                # FAST: Only read last 1000 messages per channel (not 5000!)
+                async for message in channel.history(limit=1000):
                     if message.author.bot:
                         continue
                     
@@ -2223,7 +2224,11 @@ async def raid(interaction: discord.Interaction):
                         all_message_counts[message.author.id] = 0
                     all_message_counts[message.author.id] += 1
                     
-            except:
+            except asyncio.TimeoutError:
+                logger.warning(f"Timeout reading {channel.name}")
+                continue
+            except Exception as e:
+                logger.warning(f"Error in {channel.name}: {e}")
                 continue
     except Exception as e:
         logger.warning(f"Error counting messages: {e}")
