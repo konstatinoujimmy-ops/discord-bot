@@ -4,9 +4,20 @@ This is a 24/7 Discord bot designed to run continuously on Replit using free kee
 
 # User Preferences
 
-Preferred communication style: Simple, everyday language. Greek language exclusively. Mobile-friendly step-by-step guidance.
+- Preferred communication style: Simple, everyday language
+- **IMPORTANT**: Greek language ONLY - ALWAYS and EXCLUSIVELY. Never switch languages randomly.
+- Mobile-friendly step-by-step guidance
+- Owner: mitsos_283 (ID: 839148474314129419)
 
-## Recent Changes (November 27, 2025 - LATEST)
+## Recent Changes (November 29, 2025 - LATEST)
+- ✅ **Fixed `/recall_left_members` command** - Restructured to find 400+ left members
+  - Changed logic: scans ALL audit logs (kicks + bans) without time limit
+  - Combines current members + audit log members to create "all_ever_members"
+  - Now detects voluntary departures + kicked + banned members correctly
+  - Expected to find 400+ members that need recall DMs
+  - Uses 9-second delay between DMs to prevent rate limiting
+
+## Previous Changes (November 27, 2025)
 - ✅ **Added `/check_partnerships` command** (Owner-only)
   - Monitors partnership channel (ID: 1250102945589100554)
   - Identifies which partnership servers have removed our server link
