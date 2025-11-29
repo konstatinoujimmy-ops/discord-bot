@@ -342,6 +342,20 @@ async def on_ready():
     # Load persistent anime character data
     load_anime_data()
     
+    # Initialize all_members_ever with current guild members (first run)
+    tracking = load_recall_tracking()
+    if 'all_members_ever' not in tracking:
+        tracking['all_members_ever'] = []
+        for guild in bot.guilds:
+            try:
+                async for member in guild.fetch_members(limit=None):
+                    if member.id not in tracking['all_members_ever']:
+                        tracking['all_members_ever'].append(member.id)
+            except:
+                pass
+        save_recall_tracking(tracking)
+        logger.info(f"✅ Initialized all_members_ever with {len(tracking['all_members_ever'])} members")
+    
     try:
         synced = await tree.sync()
         logger.info(f"✅ Synced {len(synced)} slash commands")
@@ -424,6 +438,14 @@ async def on_member_join(member):
     try:
         # Προσθέτουμε το member στη "contacted" list πριν προσπαθήσουμε να ανοίξουμε DM
         add_contacted_member(member.id)
+        
+        # Track ALL members that have ever joined (for finding voluntary departures)
+        tracking = load_recall_tracking()
+        if 'all_members_ever' not in tracking:
+            tracking['all_members_ever'] = []
+        if member.id not in tracking['all_members_ever']:
+            tracking['all_members_ever'].append(member.id)
+            save_recall_tracking(tracking)
         
         # Ανοίγουμε DM channel με ένα μικρό μήνυμα
         # Αυτό κάνει το Discord να δημιουργήσει μόνιμο κανάλι DM ακόμα κι αν ο user φύγει ή έχει κλειστά τα DMsΓια να είναι ασφαλέστερο, ανοίγουμε απλώς το κανάλι χωρίς να στείλουμε μήνυμα
@@ -2469,14 +2491,14 @@ async def recall_left_members(interaction: discord.Interaction):
                 if entry.target.id not in left_members:
                     left_members[entry.target.id] = entry.target
         
-        # Also get voluntary departures: members we had contact with but are no longer in guild
-        contacted_members = load_contacted_members()
+        # Also get voluntary departures: members from all_members_ever not in guild + not in audit logs
+        all_members_ever = set(recall_tracking.get('all_members_ever', []))
         current_member_ids = set()
         async for member in guild.fetch_members(limit=None):
             current_member_ids.add(member.id)
         
-        # Find members who are no longer in guild (voluntary leave)
-        for user_id in contacted_members:
+        # Find members who ever joined but are no longer in guild (voluntary leave or not yet captured in audit logs)
+        for user_id in all_members_ever:
             if user_id not in current_member_ids and user_id not in left_members:
                 try:
                     user = await bot.fetch_user(user_id)
