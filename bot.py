@@ -2505,21 +2505,22 @@ async def recall_left_members(interaction: discord.Interaction):
         except Exception as e:
             logger.error(f"❌ Error reading invites channel: {e}")
         
-        # Find members who are in the entries but NOT currently in guild
+        # Find members who are in the entries but NOT currently in guild (NO fetch_user - it's too slow!)
         voluntary_departures = 0
         for user_id in all_entries_members:
             if user_id not in current_member_ids:
                 voluntary_departures += 1
-                try:
-                    user = await bot.fetch_user(user_id)
-                    left_members[user_id] = user
-                except:
-                    pass  # User might have been deleted or blocked
+                # Create simple object with just ID (no fetch_user needed)
+                class SimpleUser:
+                    def __init__(self, uid):
+                        self.id = uid
+                        self.name = f"User {uid}"
+                left_members[user_id] = SimpleUser(user_id)
         
         logger.info(f"📊 DEBUG: all_entries_members={len(all_entries_members)}, voluntary_departures={voluntary_departures}, total_left_members={len(left_members)}")
         
         if not left_members:
-            await interaction.followup.send("✅ Κανένας δεν έχει φύγει τις τελευταίες 180 ημέρες!", ephemeral=True)
+            await interaction.followup.send("✅ Κανένας δεν έχει φύγει!", ephemeral=True)
             return
         
         # Send DMs to members NOT already tracked
@@ -2530,6 +2531,8 @@ async def recall_left_members(interaction: discord.Interaction):
         total_attempts = len(left_members)
         attempt_count = 0
         
+        logger.info(f"🚀 ΞΕΚΙΝΑΕΙ αποστολή DMs σε {total_attempts} members!")
+        
         for user_id, member in left_members.items():
             attempt_count += 1
             
@@ -2539,9 +2542,18 @@ async def recall_left_members(interaction: discord.Interaction):
                 continue
             
             try:
+                # Try to fetch user for sending DM (with timeout)
+                try:
+                    user = await asyncio.wait_for(bot.fetch_user(user_id), timeout=2.0)
+                except asyncio.TimeoutError:
+                    failed_count += 1
+                    if attempt_count % 50 == 0:
+                        logger.info(f"⏸️  PROGRESS: {attempt_count}/{total_attempts} - Sent: {sent_count}, Failed: {failed_count}")
+                    continue
+                
                 dm_embed = discord.Embed(
                     title="👋 Σας έχουμε ξεχάσει! 🎮",
-                    description=f"Καλησπέρα **{member.name if hasattr(member, 'name') else member}**!\n\nΠαρατήρησαν ότι δεν είστε παραπάνω στον server μας...",
+                    description=f"Καλησπέρα **{user.name if hasattr(user, 'name') else 'φίλε'}**!\n\nΠαρατήρησαν ότι δεν είστε παραπάνω στον server μας...",
                     color=discord.Color.blue()
                 )
                 
@@ -2560,18 +2572,24 @@ async def recall_left_members(interaction: discord.Interaction):
                 dm_embed.set_footer(text=f"Server: {guild.name} | Αν έχετε απορίες, DM το owner!")
                 dm_embed.color = discord.Color.from_rgb(0, 150, 255)
                 
-                await member.send(embed=dm_embed)
+                await user.send(embed=dm_embed)
                 sent_count += 1
                 recall_left_members_sent_count += 1
                 
                 # Add to tracked
                 recall_tracking['recalled_left_members'].append(user_id)
                 
-                # Rate limit: 9 seconds between DMs (same as /dm2) to avoid Discord blocks
-                if attempt_count < total_attempts:  # Don't wait after last DM
+                # Log progress every 50
+                if attempt_count % 50 == 0:
+                    logger.info(f"⏸️  PROGRESS: {attempt_count}/{total_attempts} - Sent: {sent_count}, Failed: {failed_count}")
+                
+                # Rate limit: 9 seconds between DMs to avoid Discord blocks
+                if attempt_count < total_attempts:
                     await asyncio.sleep(9)
-            except:
+            except Exception as e:
                 failed_count += 1
+                if attempt_count % 50 == 0:
+                    logger.info(f"⏸️  PROGRESS: {attempt_count}/{total_attempts} - Sent: {sent_count}, Failed: {failed_count} - Error: {str(e)[:50]}")
         
         # Save tracking data
         save_recall_tracking(recall_tracking)
